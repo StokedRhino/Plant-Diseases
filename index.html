@@ -1,0 +1,1489 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <meta name="theme-color" content="#0b0f14" />
+  <meta name="description" content="Diagnóstico fitopatológico local con ResNet50, TensorFlow.js y mapas de atención Grad-CAM." />
+  <title>PhytoVision AI · ResNet50 + TensorFlow.js + Grad-CAM</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2322c55e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z'/%3E%3Cpath d='M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12'/%3E%3C/svg%3E" />
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+  <style>
+    :root {
+      --bg-primary: #0b0f14;
+      --bg-surface: #121821;
+      --bg-elevated: #192230;
+      --border-subtle: #263244;
+      --text-primary: #f1f5f9;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --accent-green: #22c55e;
+      --accent-green-hover: #16a34a;
+      --accent-emerald-bg: rgba(34, 197, 94, 0.12);
+      --radius-lg: 14px;
+      --radius-md: 10px;
+      --radius-sm: 6px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background-color: var(--bg-primary);
+      color: var(--text-primary);
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    code {
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+      font-size: 0.84em;
+      background: rgba(255, 255, 255, 0.06);
+      padding: 0.15rem 0.4rem;
+      border-radius: 4px;
+    }
+
+    .hidden { display: none !important; }
+
+    /* Header */
+    .app-header {
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border-subtle);
+      position: sticky;
+      top: 0;
+      z-index: 20;
+    }
+
+    .header-inner {
+      max-width: 1320px;
+      margin: 0 auto;
+      padding: 0.9rem 1.25rem;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+    }
+
+    .brand-group { display: flex; align-items: center; gap: 0.75rem; }
+
+    .brand-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: var(--radius-md);
+      background: var(--accent-emerald-bg);
+      border: 1px solid rgba(34, 197, 94, 0.35);
+      color: var(--accent-green);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .brand-title { font-size: 1.15rem; font-weight: 700; letter-spacing: -0.01em; }
+    .brand-subtitle { font-size: 0.8rem; color: var(--text-secondary); }
+
+    .header-controls { display: flex; align-items: center; gap: 0.65rem; flex-wrap: wrap; }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.38rem 0.75rem;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      border: 1px solid var(--border-subtle);
+    }
+
+    .status-ready { background: rgba(34, 197, 94, 0.12); border-color: rgba(34, 197, 94, 0.4); color: #4ade80; }
+    .status-loading { background: rgba(56, 189, 248, 0.12); border-color: rgba(56, 189, 248, 0.35); color: #7dd3fc; }
+    .status-missing, .status-error { background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.4); color: #fbbf24; }
+
+    .model-meta-bar {
+      max-width: 1320px;
+      margin: 0 auto;
+      padding: 0.4rem 1.25rem 0.6rem;
+      border-top: 1px solid rgba(255, 255, 255, 0.04);
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1.25rem;
+      font-size: 0.78rem;
+      color: var(--text-secondary);
+    }
+
+    /* Main */
+    .main-container {
+      max-width: 1320px;
+      margin: 0 auto;
+      padding: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+
+    .workspace-grid {
+      display: grid;
+      grid-template-columns: 1fr 1.15fr;
+      gap: 1.25rem;
+      align-items: start;
+    }
+
+    @media (max-width: 960px) {
+      .workspace-grid { grid-template-columns: 1fr; }
+    }
+
+    .card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 1.25rem;
+    }
+
+    .card-header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+
+    .card-title { font-size: 1.02rem; font-weight: 700; }
+    .card-subtitle { font-size: 0.82rem; color: var(--text-secondary); margin-top: 0.15rem; }
+
+    button {
+      font-family: inherit;
+      cursor: pointer;
+      border: none;
+      border-radius: var(--radius-md);
+      font-size: 0.85rem;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.45rem;
+      padding: 0.55rem 0.95rem;
+      transition: all 0.15s ease;
+    }
+
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .btn-primary { background: var(--accent-green); color: #052e16; }
+    .btn-primary:hover:not(:disabled) { background: var(--accent-green-hover); color: #ffffff; }
+
+    .btn-secondary { background: var(--bg-elevated); color: var(--text-primary); border: 1px solid var(--border-subtle); }
+    .btn-secondary:hover:not(:disabled) { border-color: #475569; background: #222e40; }
+
+    .btn-ghost { background: transparent; color: var(--text-secondary); }
+    .btn-ghost:hover:not(:disabled) { background: rgba(255, 255, 255, 0.06); color: var(--text-primary); }
+    .btn-danger:hover:not(:disabled) { color: #f87171; }
+
+    select {
+      background: var(--bg-elevated);
+      color: var(--text-primary);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      padding: 0.38rem 0.6rem;
+      font-size: 0.8rem;
+      font-family: inherit;
+    }
+
+    .setup-banner {
+      background: rgba(245, 158, 11, 0.08);
+      border: 1px solid rgba(245, 158, 11, 0.35);
+      border-radius: var(--radius-lg);
+      padding: 1rem 1.15rem;
+      display: flex;
+      gap: 0.85rem;
+      align-items: flex-start;
+    }
+
+    .setup-banner h4 { font-size: 0.95rem; color: #fde68a; margin-bottom: 0.25rem; }
+    .setup-banner p { font-size: 0.84rem; color: var(--text-secondary); }
+
+    .code-snippet-inline {
+      margin-top: 0.6rem;
+      display: inline-block;
+      background: var(--bg-primary);
+      border: 1px solid var(--border-subtle);
+      padding: 0.4rem 0.7rem;
+      border-radius: var(--radius-sm);
+      color: #a7f3d0;
+      font-size: 0.8rem;
+    }
+
+    .alert {
+      padding: 0.75rem 1rem;
+      border-radius: var(--radius-md);
+      font-size: 0.85rem;
+      margin-bottom: 0.75rem;
+    }
+    .alert-warning { background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35); color: #fde68a; }
+    .alert-error { background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.4); color: #fca5a5; }
+
+    /* Dropzone & Preview */
+    .preprocess-selector { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.78rem; color: var(--text-secondary); }
+
+    .dropzone {
+      border: 2px dashed var(--border-subtle);
+      border-radius: var(--radius-lg);
+      padding: 2.5rem 1.25rem;
+      text-align: center;
+      background: rgba(255, 255, 255, 0.015);
+      transition: all 0.2s ease;
+    }
+    .dropzone.dragover { border-color: var(--accent-green); background: rgba(34, 197, 94, 0.06); }
+
+    .dropzone-icon {
+      width: 54px; height: 54px; margin: 0 auto 0.85rem;
+      border-radius: 50%; background: var(--bg-elevated); color: var(--accent-green);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .dropzone-title { font-weight: 600; font-size: 0.98rem; }
+    .dropzone-hint { font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem; }
+    .dropzone-buttons { margin-top: 1.25rem; display: flex; justify-content: center; gap: 0.65rem; flex-wrap: wrap; }
+
+    .camera-viewport { display: flex; flex-direction: column; gap: 0.75rem; }
+    .camera-video { width: 100%; max-height: 380px; object-fit: cover; border-radius: var(--radius-md); background: #000; }
+    .camera-actions { display: flex; justify-content: center; gap: 0.65rem; flex-wrap: wrap; }
+
+    .preview-container { display: flex; flex-direction: column; gap: 0.9rem; }
+    .preview-image-wrapper {
+      position: relative; border-radius: var(--radius-md); overflow: hidden;
+      background: #070a0e; border: 1px solid var(--border-subtle); display: flex; justify-content: center;
+    }
+    .preview-image { max-width: 100%; max-height: 360px; object-fit: contain; }
+    .btn-icon-close {
+      position: absolute; top: 0.6rem; right: 0.6rem; width: 32px; height: 32px; padding: 0;
+      border-radius: 50%; background: rgba(11, 15, 20, 0.82); color: #f8fafc; border: 1px solid var(--border-subtle);
+    }
+    .preview-actions { display: flex; justify-content: space-between; gap: 0.65rem; flex-wrap: wrap; }
+    .btn-analyze { flex: 1; }
+
+    /* Results */
+    .result-empty { min-height: 340px; display: flex; align-items: center; justify-content: center; }
+    .empty-state { text-align: center; max-width: 380px; color: var(--text-secondary); display: flex; flex-direction: column; align-items: center; gap: 0.6rem; }
+    .empty-state h3 { color: var(--text-primary); font-size: 1rem; }
+    .empty-state p { font-size: 0.84rem; }
+
+    .severity-badge { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.32rem 0.7rem; border-radius: 999px; font-size: 0.78rem; font-weight: 600; }
+    .severity-ninguna { background: rgba(34, 197, 94, 0.14); color: #4ade80; }
+    .severity-moderada { background: rgba(245, 158, 11, 0.14); color: #fbbf24; }
+    .severity-alta { background: rgba(249, 115, 22, 0.16); color: #fb923c; }
+    .severity-critica { background: rgba(239, 68, 68, 0.16); color: #f87171; }
+
+    .primary-diagnosis-box {
+      background: var(--bg-elevated); border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md); padding: 1rem; margin-bottom: 1rem;
+    }
+    .diagnosis-crop-tag { display: inline-block; font-size: 0.74rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--accent-green); margin-bottom: 0.25rem; }
+    .diagnosis-name { font-size: 1.2rem; font-weight: 700; }
+    .diagnosis-pathogen { font-size: 0.84rem; color: var(--text-secondary); margin-top: 0.15rem; }
+
+    .confidence-meter { margin-top: 0.85rem; }
+    .confidence-label-row { display: flex; justify-content: space-between; font-size: 0.82rem; margin-bottom: 0.35rem; }
+    .progress-track { height: 9px; background: var(--bg-primary); border-radius: 999px; overflow: hidden; }
+    .progress-fill { height: 100%; border-radius: 999px; transition: width 0.35s ease; }
+    .fill-healthy { background: var(--accent-green); }
+    .fill-disease { background: linear-gradient(90deg, #f59e0b, #ef4444); }
+
+    /* Grad-CAM */
+    .gradcam-section { border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 0.9rem; margin-bottom: 1rem; background: rgba(0, 0, 0, 0.2); }
+    .gradcam-header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; }
+    .gradcam-title { font-weight: 600; font-size: 0.88rem; }
+    .segmented-control { display: inline-flex; background: var(--bg-primary); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 2px; }
+    .segmented-control button { padding: 0.28rem 0.6rem; font-size: 0.76rem; border-radius: 4px; background: transparent; color: var(--text-secondary); }
+    .segmented-control button.active { background: var(--bg-elevated); color: var(--text-primary); }
+
+    .gradcam-visual-frame { display: flex; justify-content: center; background: #070a0e; border-radius: var(--radius-sm); overflow: hidden; }
+    .gradcam-image { max-width: 100%; max-height: 300px; object-fit: contain; }
+    .gradcam-metrics { margin-top: 0.7rem; display: flex; flex-wrap: wrap; gap: 0.5rem; }
+    .metric-chip { font-size: 0.76rem; color: var(--text-secondary); background: var(--bg-elevated); padding: 0.3rem 0.6rem; border-radius: var(--radius-sm); }
+    .gradcam-note { margin-top: 0.6rem; font-size: 0.78rem; color: var(--text-muted); }
+
+    /* Top 4 */
+    .top-predictions-section { margin-bottom: 1rem; }
+    .top-predictions-section h4 { font-size: 0.86rem; color: var(--text-secondary); margin-bottom: 0.55rem; }
+    .top-list { display: flex; flex-direction: column; gap: 0.5rem; }
+    .top-item-info { display: flex; align-items: center; gap: 0.45rem; font-size: 0.82rem; margin-bottom: 0.2rem; }
+    .top-crop { font-size: 0.7rem; font-weight: 700; padding: 0.1rem 0.4rem; border-radius: 4px; background: var(--bg-elevated); color: var(--text-secondary); }
+    .top-name { flex: 1; }
+    .mini-track { height: 5px; background: var(--bg-primary); border-radius: 999px; overflow: hidden; }
+    .mini-fill { height: 100%; background: #38bdf8; }
+
+    /* Agronomic */
+    .agronomic-details { border-top: 1px solid var(--border-subtle); padding-top: 0.9rem; }
+    .agronomic-desc { font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.85rem; }
+    .agronomic-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    @media (max-width: 640px) { .agronomic-columns { grid-template-columns: 1fr; } }
+    .agronomic-columns h5 { font-size: 0.83rem; color: var(--text-primary); margin-bottom: 0.4rem; }
+    .agronomic-columns ul { padding-left: 1.1rem; font-size: 0.81rem; color: var(--text-secondary); display: flex; flex-direction: column; gap: 0.3rem; }
+
+    /* History */
+    .history-actions { display: flex; align-items: center; gap: 0.5rem; }
+    .history-empty { font-size: 0.85rem; color: var(--text-muted); text-align: center; padding: 1.25rem 0; }
+    .history-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 0.85rem; }
+    .history-item { background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 0.65rem; display: flex; align-items: center; gap: 0.75rem; }
+    .history-thumb { width: 58px; height: 58px; border-radius: var(--radius-sm); object-fit: cover; flex-shrink: 0; }
+    .history-body { flex: 1; min-width: 0; }
+    .history-top-row { display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--text-muted); }
+    .history-crop { font-weight: 700; color: var(--accent-green); }
+    .history-diagnosis { font-size: 0.85rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin: 0.15rem 0; }
+    .history-meta { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-secondary); }
+    .text-healthy { color: #4ade80; }
+    .text-disease { color: #fbbf24; }
+    .btn-icon-delete { padding: 0.35rem; background: transparent; color: var(--text-muted); }
+    .btn-icon-delete:hover { color: #f87171; }
+  </style>
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-inner">
+      <div class="brand-group">
+        <div class="brand-icon" aria-hidden="true">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/>
+            <path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/>
+          </svg>
+        </div>
+        <div>
+          <h1 class="brand-title">PhytoVision AI</h1>
+          <p class="brand-subtitle">ResNet50 · TensorFlow.js Local · Explicabilidad Grad-CAM</p>
+        </div>
+      </div>
+
+      <div class="header-controls">
+        <div id="model-status-pill" class="status-pill status-loading">Inicializando TF.js...</div>
+        <button type="button" id="btn-upload-model" class="btn-secondary" title="Seleccionar model.json y archivos .bin">
+          Cargar Modelo (.json + .bin)
+        </button>
+        <input type="file" id="model-files-input" multiple accept=".json,.bin" class="hidden" />
+      </div>
+    </div>
+    <div id="model-meta-bar" class="model-meta-bar hidden"></div>
+  </header>
+
+  <main class="main-container">
+    <div id="setup-banner" class="setup-banner hidden">
+      <div>
+        <h4>Integración del Modelo ResNet50 Entrenado en Google Colab</h4>
+        <p id="setup-banner-msg">
+          No se encontró <code>./model/model.json</code> en el repositorio. Sube <code>model.json</code> y sus fragmentos <code>.bin</code> a una carpeta <code>model/</code> en GitHub junto a este <code>index.html</code>, o cárgalos ahora mismo con el botón superior <strong>“Cargar Modelo (.json + .bin)”</strong>.
+        </p>
+        <div class="code-snippet-inline">
+          <code>tensorflowjs_converter --input_format=keras modelo_resnet50.h5 model/</code>
+        </div>
+      </div>
+    </div>
+
+    <div id="runtime-error" class="alert alert-error hidden"></div>
+
+    <div class="workspace-grid">
+      <!-- Panel de Captura -->
+      <section class="card">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">1. Captura de Muestra Foliar</h2>
+            <p class="card-subtitle">Soporta hojas de Tomate, Papa y Maíz (14 clases PlantVillage / PlantDoc)</p>
+          </div>
+          <div class="preprocess-selector">
+            <label for="preprocess-select">Preprocesamiento:</label>
+            <select id="preprocess-select">
+              <option value="caffe">ResNet50 Caffe (BGR - Media ImageNet)</option>
+              <option value="tf">TensorFlow (-1 a 1)</option>
+              <option value="rescale">Normalizado (0 a 1)</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="camera-error" class="alert alert-warning hidden"></div>
+
+        <!-- Vista Cámara -->
+        <div id="camera-viewport" class="camera-viewport hidden">
+          <video id="camera-video" playsinline muted class="camera-video"></video>
+          <div class="camera-actions">
+            <button type="button" id="btn-switch-cam" class="btn-secondary">Cambiar Cámara</button>
+            <button type="button" id="btn-capture-frame" class="btn-primary">Capturar Hoja</button>
+            <button type="button" id="btn-stop-cam" class="btn-ghost">Cancelar</button>
+          </div>
+        </div>
+
+        <!-- Vista Previa -->
+        <div id="preview-container" class="preview-container hidden">
+          <div class="preview-image-wrapper">
+            <img id="preview-image" src="" alt="Muestra foliar" class="preview-image" />
+            <button type="button" id="btn-clear-img" class="btn-icon-close" title="Quitar imagen">✕</button>
+          </div>
+          <div class="preview-actions">
+            <button type="button" id="btn-change-img" class="btn-secondary">Cambiar Imagen</button>
+            <button type="button" id="btn-analyze" class="btn-primary btn-analyze" disabled>
+              Analizar Patología con ResNet50
+            </button>
+          </div>
+        </div>
+
+        <!-- Dropzone -->
+        <div id="dropzone" class="dropzone">
+          <div class="dropzone-icon" aria-hidden="true">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="17 8 12 3 7 8"/>
+              <line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+          </div>
+          <p class="dropzone-title">Arrastra una fotografía de la hoja aquí</p>
+          <p class="dropzone-hint">Procesamiento 100% local en el navegador · Formatos JPG, PNG o WebP</p>
+          <div class="dropzone-buttons">
+            <button type="button" id="btn-select-file" class="btn-primary">Seleccionar Archivo</button>
+            <button type="button" id="btn-open-cam" class="btn-secondary">Usar Cámara</button>
+          </div>
+        </div>
+
+        <input type="file" id="image-file-input" accept="image/*" class="hidden" />
+      </section>
+
+      <!-- Panel de Resultados -->
+      <section id="result-empty-card" class="card result-empty">
+        <div class="empty-state">
+          <h3>Sin diagnóstico activo</h3>
+          <p>
+            Carga tu modelo ResNet50 exportado en TensorFlow.js y analiza una muestra foliar para visualizar la clasificación y el mapa de atención Grad-CAM.
+          </p>
+        </div>
+      </section>
+
+      <section id="result-card" class="card hidden">
+        <div class="card-header">
+          <div>
+            <h2 class="card-title">2. Resultado del Diagnóstico &amp; Grad-CAM</h2>
+            <p id="inference-meta" class="card-subtitle"></p>
+          </div>
+          <span id="severity-badge" class="severity-badge"></span>
+        </div>
+
+        <div class="primary-diagnosis-box">
+          <div id="diag-crop" class="diagnosis-crop-tag"></div>
+          <h3 id="diag-name" class="diagnosis-name"></h3>
+          <p id="diag-pathogen" class="diagnosis-pathogen"></p>
+
+          <div class="confidence-meter">
+            <div class="confidence-label-row">
+              <span>Confianza del modelo ResNet50</span>
+              <strong id="diag-confidence"></strong>
+            </div>
+            <div class="progress-track">
+              <div id="diag-progress" class="progress-fill"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="gradcam-section">
+          <div class="gradcam-header">
+            <span class="gradcam-title">Interpretabilidad Visual Grad-CAM</span>
+            <div id="gradcam-controls" class="segmented-control">
+              <button type="button" data-mode="overlay" class="active">Superposición</button>
+              <button type="button" data-mode="heatmap">Mapa de Calor</button>
+              <button type="button" data-mode="original">Original</button>
+            </div>
+          </div>
+          <div class="gradcam-visual-frame">
+            <img id="gradcam-image" src="" alt="Mapa de atención Grad-CAM" class="gradcam-image" />
+          </div>
+          <div id="gradcam-metrics" class="gradcam-metrics"></div>
+          <p id="gradcam-note" class="gradcam-note hidden"></p>
+        </div>
+
+        <div class="top-predictions-section">
+          <h4>Distribución de Probabilidades (Top 4)</h4>
+          <div id="top-list" class="top-list"></div>
+        </div>
+
+        <div class="agronomic-details">
+          <p id="agronomic-desc" class="agronomic-desc"></p>
+          <div class="agronomic-columns">
+            <div>
+              <h5>Síntomas Clave</h5>
+              <ul id="symptoms-list"></ul>
+            </div>
+            <div>
+              <h5>Manejo Agronómico Recomendado</h5>
+              <ul id="recommendations-list"></ul>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- Historial Local -->
+    <section class="card">
+      <div class="card-header">
+        <div>
+          <h2 id="history-title" class="card-title">Historial Local de Diagnósticos (0)</h2>
+          <p class="card-subtitle">Almacenado localmente en el navegador (sin servidor externo)</p>
+        </div>
+        <div class="history-actions">
+          <select id="history-filter" aria-label="Filtrar por cultivo">
+            <option value="Todos">Todos los cultivos</option>
+            <option value="Tomate">Tomate</option>
+            <option value="Papa">Papa</option>
+            <option value="Maíz">Maíz</option>
+          </select>
+          <button type="button" id="btn-export-csv" class="btn-secondary hidden">CSV</button>
+          <button type="button" id="btn-clear-history" class="btn-ghost btn-danger hidden">Borrar</button>
+        </div>
+      </div>
+      <p id="history-empty" class="history-empty">No hay registros guardados para el filtro seleccionado.</p>
+      <div id="history-grid" class="history-grid"></div>
+    </section>
+  </main>
+
+  <script>
+    const INPUT_SIZE = 224;
+    const STORAGE_KEY = 'phytovision_github_history_v1';
+
+    const DEFAULT_PLANT_CLASSES = [
+      {
+        index: 0,
+        id: 'Corn_(maize)___Cercospora_leaf_spot Gray_leaf_spot',
+        crop: 'Maíz',
+        commonName: 'Mancha gris de la hoja (Cercospora)',
+        pathogen: 'Cercospora zeae-maydis',
+        isHealthy: false,
+        severity: 'alta',
+        description: 'Enfermedad fúngica foliar que reduce significativamente el área fotosintética en etapas de llenado de grano.',
+        symptoms: [
+          'Lesiones rectangulares alargadas delimitadas por las nervaduras de la hoja.',
+          'Coloración grisácea a pardo claro con aspecto necrótico.',
+          'Inicia en hojas inferiores y asciende progresivamente.'
+        ],
+        recommendations: [
+          'Aplicar fungicidas a base de estrobilurinas o triazoles en estadio VT-R1 si supera el umbral.',
+          'Practicar rotación de cultivos y manejo de rastrojos infectados.',
+          'Utilizar híbridos con resistencia genética comprobada.'
+        ]
+      },
+      {
+        index: 1,
+        id: 'Corn_(maize)___Common_rust_',
+        crop: 'Maíz',
+        commonName: 'Roya común del maíz',
+        pathogen: 'Puccinia sorghi',
+        isHealthy: false,
+        severity: 'moderada',
+        description: 'Infección causada por urediniosporas transportadas por el viento, favorecida por temperaturas frescas y alta humedad.',
+        symptoms: [
+          'Pústulas ovaladas o alargadas de color marrón canela en ambas caras de la hoja.',
+          'Ruptura de la epidermis foliar liberando polvo rojizo (uredosporas).',
+          'Clorosis alrededor de las pústulas en infecciones severas.'
+        ],
+        recommendations: [
+          'Monitorear lotes jóvenes antes de la floración.',
+          'Aplicar fungicida foliar solo en híbridos susceptibles con alta presión de inóculo.',
+          'Evitar siembras tardías en zonas con historial de roya.'
+        ]
+      },
+      {
+        index: 2,
+        id: 'Corn_(maize)___Northern_Leaf_Blight',
+        crop: 'Maíz',
+        commonName: 'Tizón foliar del norte',
+        pathogen: 'Exserohilum turcicum',
+        isHealthy: false,
+        severity: 'alta',
+        description: 'Patología foliar de rápida propagación en climas templados y húmedos capaz de provocar pérdidas severas de rendimiento.',
+        symptoms: [
+          'Lesiones grandes en forma de cigarro o huso (2.5 a 15 cm de largo).',
+          'Coloración verde grisácea inicial que evoluciona a marrón pajizo.',
+          'Esporulación oscura visible en el centro de las lesiones bajo alta humedad.'
+        ],
+        recommendations: [
+          'Intervenir con fungicidas foliares antes de que las lesiones alcancen la hoja de la mazorca.',
+          'Incorporar residuos de cosecha para reducir la supervivencia del hongo.',
+          'Seleccionar variedades con genes de resistencia Ht.'
+        ]
+      },
+      {
+        index: 3,
+        id: 'Potato___Early_blight',
+        crop: 'Papa',
+        commonName: 'Tizón temprano de la papa',
+        pathogen: 'Alternaria solani',
+        isHealthy: false,
+        severity: 'alta',
+        description: 'Enfermedad fúngica frecuente en follaje maduro o plantas sometidas a estrés nutricional o hídrico.',
+        symptoms: [
+          'Manchas circulares de color marrón oscuro con anillos concéntricos ("tiro al blanco").',
+          'Halo clorótico amarillento alrededor del tejido necrótico.',
+          'Defoliación prematura comenzando en hojas basales.'
+        ],
+        recommendations: [
+          'Mantener fertilización nitrogenada y potásica equilibrada.',
+          'Aplicar fungicidas protectores (mancozeb, clorotalonil) o sistémicos (azoxistrobina, difenoconazol).',
+          'Eliminar plantas voluntarias y rotar con gramíneas.'
+        ]
+      },
+      {
+        index: 4,
+        id: 'Potato___Late_blight',
+        crop: 'Papa',
+        commonName: 'Tizón tardío (Rancha) de la papa',
+        pathogen: 'Phytophthora infestans',
+        isHealthy: false,
+        severity: 'critica',
+        description: 'Oomiceto altamente destructivo que puede devastar cultivos completos en pocos días bajo condiciones de frío y alta humedad.',
+        symptoms: [
+          'Manchas irregulares de aspecto acuoso verde oscuro a negro en bordes y puntas de hojas.',
+          'Micelio blanquecino algodonoso en el envés de la hoja durante las mañanas húmedas.',
+          'Olor característico a tejido vegetal en descomposición.'
+        ],
+        recommendations: [
+          'Actuar de inmediato con fungicidas específicos anti-oomicetos (cimoxanil, metalaxil-M, fluopicolida).',
+          'Eliminar y destruir focos iniciales de infección para frenar la esporulación.',
+          'Evitar riego por aspersión en horas nocturnas.'
+        ]
+      },
+      {
+        index: 5,
+        id: 'Tomato___Bacterial_spot',
+        crop: 'Tomate',
+        commonName: 'Mancha bacteriana del tomate',
+        pathogen: 'Xanthomonas spp.',
+        isHealthy: false,
+        severity: 'alta',
+        description: 'Infección bacteriana transmitida por semillas, salpicaduras de lluvia y manipulación de plantas húmedas.',
+        symptoms: [
+          'Pequeñas lesiones acuosas circulares (< 3 mm) que se tornan marrón oscuro o negras.',
+          'Centro necrótico quebradizo con halo amarillento estrecho.',
+          'Pústulas costrosas elevadas en frutos verdes.'
+        ],
+        recommendations: [
+          'Aplicar bactericidas cúpricos combinados con mancozeb para reducir resistencia.',
+          'Evitar labores culturales cuando el follaje esté mojado.',
+          'Desinfectar herramientas y usar semilla certificada.'
+        ]
+      },
+      {
+        index: 6,
+        id: 'Tomato___Early_blight',
+        crop: 'Tomate',
+        commonName: 'Tizón temprano del tomate',
+        pathogen: 'Alternaria linariae / Alternaria solani',
+        isHealthy: false,
+        severity: 'alta',
+        description: 'Afecta hojas, tallos y frutos, reduciendo el vigor y exponiendo los frutos al golpe de sol por defoliación.',
+        symptoms: [
+          'Manchas oscuras con patrones concéntricos bien definidos en hojas viejas.',
+          'Amarillamiento progresivo y caída de hojas inferiores.',
+          'Lesiones hundidas cerca del cáliz en los frutos.'
+        ],
+        recommendations: [
+          'Podar hojas basales envejecidas y mejorar la ventilación del cultivo.',
+          'Aplicar fungicidas preventivos y rotar modos de acción FRAC.',
+          'Usar acolchado (mulch) para evitar salpicaduras desde el suelo.'
+        ]
+      },
+      {
+        index: 7,
+        id: 'Tomato___Late_blight',
+        crop: 'Tomate',
+        commonName: 'Tizón tardío del tomate',
+        pathogen: 'Phytophthora infestans',
+        isHealthy: false,
+        severity: 'critica',
+        description: 'Patología de avance explosivo en ambientes húmedos y frescos que compromete follaje, tallos y frutos.',
+        symptoms: [
+          'Lesiones extensas verde-grisáceas de aspecto húmedo que rápidamente ennegrecen.',
+          'Eflorescencia blanquecina en el envés de las hojas infectadas.',
+          'Manchas firmes de color marrón cobrizo en frutos.'
+        ],
+        recommendations: [
+          'Iniciar control químico preventivo/curativo inmediato ante alertas climáticas.',
+          'Retirar tejido severamente afectado en bolsas cerradas.',
+          'Optimizar el drenaje y reducir humedad relativa en invernadero.'
+        ]
+      },
+      {
+        index: 8,
+        id: 'Tomato___Leaf_Mold',
+        crop: 'Tomate',
+        commonName: 'Moho foliar del tomate',
+        pathogen: 'Passalora fulva (Fulvia fulva)',
+        isHealthy: false,
+        severity: 'moderada',
+        description: 'Común en cultivos protegidos o invernaderos con humedad relativa superior al 85% y poca ventilación.',
+        symptoms: [
+          'Manchas amarillas difusas en el haz de la hoja sin bordes definidos.',
+          'Terciopelo o moho verde oliva a púrpura en el envés correspondiente.',
+          'Enrollamiento y secado de hojas sin caída inmediata.'
+        ],
+        recommendations: [
+          'Incrementar la ventilación y reducir la humedad relativa por debajo del 80%.',
+          'Evitar mojar el follaje utilizando riego por goteo.',
+          'Aplicar fungicidas específicos si la infección avanza.'
+        ]
+      },
+      {
+        index: 9,
+        id: 'Tomato___Septoria_leaf_spot',
+        crop: 'Tomate',
+        commonName: 'Mancha foliar por Septoria',
+        pathogen: 'Septoria lycopersici',
+        isHealthy: false,
+        severity: 'alta',
+        description: 'Una de las enfermedades foliares más destructivas del tomate tras el cuajado de los primeros racimos.',
+        symptoms: [
+          'Numerosas manchas circulares pequeñas (2-5 mm) con borde oscuro y centro gris claro.',
+          'Pequeños puntos negros (picnidios) visibles en el centro de la lesión.',
+          'Amarillamiento rápido y defoliación ascendente.'
+        ],
+        recommendations: [
+          'Eliminar hojas inferiores afectadas y desinfectar tutores.',
+          'Aplicar fungicidas a base de clorotalonil, mancozeb o estrobilurinas.',
+          'Eliminar malezas solanáceas hospederas alrededor del lote.'
+        ]
+      },
+      {
+        index: 10,
+        id: 'Tomato___Spider_mites Two-spotted_spider_mite',
+        crop: 'Tomate',
+        commonName: 'Araña roja (Ácaro de dos manchas)',
+        pathogen: 'Tetranychus urticae',
+        isHealthy: false,
+        severity: 'moderada',
+        description: 'Plaga de ácaros que succiona el contenido celular del envés foliar, proliferando en condiciones cálidas y secas.',
+        symptoms: [
+          'Punteado clorótico fino (aspecto bronceado o plateado) en el haz de las hojas.',
+          'Finas telarañas en el envés y brotes tiernos en infestaciones altas.',
+          'Desecación foliar y pérdida de vigor de la planta.'
+        ],
+        recommendations: [
+          'Aplicar acaricidas específicos (abamectina, spiromesifen) o jabón potásico / aceite de neem.',
+          'Fomentar control biológico con ácaros depredadores (Phytoseiulus persimilis).',
+          'Evitar estrés hídrico y exceso de fertilización nitrogenada.'
+        ]
+      },
+      {
+        index: 11,
+        id: 'Tomato___Tomato_Yellow_Leaf_Curl_Virus',
+        crop: 'Tomate',
+        commonName: 'Virus del rizado amarillo (TYLCV)',
+        pathogen: 'Begomovirus (transmitido por Bemisia tabaci)',
+        isHealthy: false,
+        severity: 'critica',
+        description: 'Virosis sistémica transmitida por la mosca blanca que detiene el crecimiento y provoca aborto floral masivo.',
+        symptoms: [
+          'Enrollamiento severo hacia arriba de los bordes de los foliolos ("acucharamiento").',
+          'Clorosis marginal e intervenal intensa en brotes apicales.',
+          'Enanismo marcado de la planta y caída de flores.'
+        ],
+        recommendations: [
+          'Erradicar inmediatamente plantas sintomáticas tempranas para eliminar fuentes de inóculo.',
+          'Controlar el vector (mosca blanca) con trampas cromáticas amarillas e insecticidas selectivos.',
+          'Utilizar mallas anti-áfidos en viveros y cultivares con resistencia Ty-1 / Ty-3.'
+        ]
+      },
+      {
+        index: 12,
+        id: 'Tomato___Tomato_mosaic_virus',
+        crop: 'Tomate',
+        commonName: 'Virus del mosaico del tomate (ToMV)',
+        pathogen: 'Tobamovirus (Tomato mosaic virus)',
+        isHealthy: false,
+        severity: 'alta',
+        description: 'Virus altamente estable transmitido mecánicamente por contacto, herramientas, manos y semillas contaminadas.',
+        symptoms: [
+          'Patrón de mosaico con áreas verde claro y verde oscuro alternadas en la lámina foliar.',
+          'Deformación o aspecto filiforme ("helecho") de los foliolos jóvenes.',
+          'Reducción del tamaño y maduración irregular de los frutos.'
+        ],
+        recommendations: [
+          'No existe cura química; retirar y destruir plantas infectadas sin rozar plantas sanas.',
+          'Desinfectar herramientas y manos con solución de fosfato trisódico o hipoclorito.',
+          'Emplear variedades resistentes con genes Tm-2 / Tm-2².'
+        ]
+      },
+      {
+        index: 13,
+        id: 'Tomato___healthy',
+        crop: 'Tomate',
+        commonName: 'Follaje sano (Sin patología)',
+        pathogen: 'Ninguno detectado',
+        isHealthy: true,
+        severity: 'ninguna',
+        description: 'La lámina foliar presenta coloración verde uniforme, turgencia normal y ausencia de lesiones necróticas o cloróticas.',
+        symptoms: [
+          'Tejido foliar íntegro con nervaduras bien definidas.',
+          'Sin presencia de pústulas, micelio, mosaicos ni deformaciones.'
+        ],
+        recommendations: [
+          'Continuar con el plan preventivo de nutrición y riego balanceado.',
+          'Mantener monitoreo periódico en el envés de las hojas inferiores.'
+        ]
+      }
+    ];
+
+    // Estado global
+    let layersModel = null;
+    let graphModel = null;
+    let gradCamSubModel = null;
+    let gradCamLayerName = null;
+    let activeClasses = [...DEFAULT_PLANT_CLASSES];
+    let modelReady = false;
+    let currentImageDataUrl = null;
+    let currentDiagnosis = null;
+    let cameraStream = null;
+    let facingMode = 'environment';
+
+    // Utilidades DOM
+    const $ = (id) => document.getElementById(id);
+
+    function resolvePlantClasses(customClassMap) {
+      if (!customClassMap) return [...DEFAULT_PLANT_CLASSES];
+      const orderedIds = Array.isArray(customClassMap)
+        ? customClassMap
+        : Object.entries(customClassMap).sort((a, b) => a[1] - b[1]).map(([k]) => k);
+      if (!orderedIds.length) return [...DEFAULT_PLANT_CLASSES];
+
+      return orderedIds.map((rawId, idx) => {
+        const norm = rawId.trim().toLowerCase();
+        const match = DEFAULT_PLANT_CLASSES.find(
+          (c) => c.id.toLowerCase() === norm || c.id.toLowerCase().replace(/[^a-z0-9]/g, '') === norm.replace(/[^a-z0-9]/g, '')
+        );
+        if (match) return { ...match, index: idx };
+        const isHealthy = norm.includes('healthy') || norm.includes('sano');
+        const crop = norm.includes('potato') || norm.includes('papa') ? 'Papa' : norm.includes('corn') || norm.includes('maize') ? 'Maíz' : 'Tomate';
+        return {
+          index: idx,
+          id: rawId,
+          crop,
+          commonName: rawId.replace(/___/g, ' - ').replace(/_/g, ' '),
+          pathogen: isHealthy ? 'Ninguno detectado' : 'Patógeno identificado por modelo',
+          isHealthy,
+          severity: isHealthy ? 'ninguna' : 'moderada',
+          description: 'Clase cargada desde class_indices.json.',
+          symptoms: [isHealthy ? 'Follaje sin signos visibles de enfermedad.' : 'Alteración foliar detectada por ResNet50.'],
+          recommendations: [isHealthy ? 'Mantener monitoreo preventivo.' : 'Verificar extensión en campo y aplicar manejo integrado.']
+        };
+      });
+    }
+
+    async function ensureBackend() {
+      await tf.ready();
+      try {
+        if (tf.getBackend() !== 'webgl') {
+          await tf.setBackend('webgl');
+          await tf.ready();
+        }
+      } catch {
+        await tf.setBackend('cpu');
+        await tf.ready();
+      }
+      return tf.getBackend() || 'cpu';
+    }
+
+    function disposeModels() {
+      if (gradCamSubModel) { gradCamSubModel.dispose(); gradCamSubModel = null; }
+      if (layersModel) { layersModel.dispose(); layersModel = null; }
+      if (graphModel) { graphModel.dispose(); graphModel = null; }
+      gradCamLayerName = null;
+      modelReady = false;
+    }
+
+    function setupGradCam(model) {
+      const layers = model.layers;
+      let candidate = null;
+      for (let i = layers.length - 1; i >= 0; i--) {
+        const shape = Array.isArray(layers[i].outputShape) ? layers[i].outputShape : [];
+        if (shape.length === 4 && typeof shape[1] === 'number' && shape[1] >= 4) {
+          candidate = layers[i];
+          break;
+        }
+      }
+      if (!candidate) return null;
+      try {
+        const convOut = candidate.output;
+        const modelOut = Array.isArray(model.output) ? model.output[0] : model.output;
+        gradCamSubModel = tf.model({ inputs: model.inputs, outputs: [convOut, modelOut] });
+        gradCamLayerName = candidate.name;
+        return candidate.name;
+      } catch {
+        gradCamSubModel = null;
+        gradCamLayerName = null;
+        return null;
+      }
+    }
+
+    function warmUp() {
+      tf.tidy(() => {
+        const dummy = tf.zeros([1, INPUT_SIZE, INPUT_SIZE, 3]);
+        if (layersModel) layersModel.predict(dummy);
+        else if (graphModel) graphModel.predict(dummy);
+      });
+    }
+
+    function updateModelUI(status, backend, modelType = null, gradLayer = null, errorMsg = '') {
+      const pill = $('model-status-pill');
+      const metaBar = $('model-meta-bar');
+      const banner = $('setup-banner');
+
+      pill.className = `status-pill status-${status}`;
+      if (status === 'loading') {
+        pill.textContent = 'Inicializando TF.js...';
+        metaBar.classList.add('hidden');
+      } else if (status === 'ready') {
+        pill.textContent = `Modelo Activo (${backend.toUpperCase()})`;
+        metaBar.innerHTML = `<span>Arquitectura: <strong>${modelType}</strong> (224×224×3)</span><span>Capa Grad-CAM: <strong>${gradLayer || 'No disponible en GraphModel'}</strong></span>`;
+        metaBar.classList.remove('hidden');
+        banner.classList.add('hidden');
+        modelReady = true;
+      } else {
+        pill.textContent = status === 'missing' ? 'Esperando archivos del modelo' : 'Error en modelo';
+        metaBar.classList.add('hidden');
+        if (errorMsg) $('setup-banner-msg').textContent = errorMsg;
+        banner.classList.remove('hidden');
+        modelReady = false;
+      }
+      $('btn-analyze').disabled = !modelReady || !currentImageDataUrl;
+    }
+
+    async function loadModelFromUrl(url = './model/model.json') {
+      const backend = await ensureBackend();
+      disposeModels();
+      updateModelUI('loading', backend);
+
+      try {
+        const res = await fetch(url, { cache: 'no-store' });
+        if (!res.ok) {
+          updateModelUI(
+            'missing',
+            backend,
+            null,
+            null,
+            'No se encontró ./model/model.json en este repositorio. Sube model.json y sus archivos .bin a una carpeta model/ en GitHub junto a index.html, o cárgalos localmente con el botón superior.'
+          );
+          return;
+        }
+        const manifest = await res.json();
+        try {
+          const clsRes = await fetch('./model/class_indices.json', { cache: 'no-store' });
+          if (clsRes.ok) activeClasses = resolvePlantClasses(await clsRes.json());
+        } catch {}
+
+        if (manifest.format === 'graph-model') {
+          graphModel = await tf.loadGraphModel(url);
+          updateModelUI('ready', backend, 'GraphModel', null);
+        } else {
+          layersModel = await tf.loadLayersModel(url);
+          const gLayer = setupGradCam(layersModel);
+          warmUp();
+          updateModelUI('ready', backend, 'LayersModel', gLayer);
+        }
+      } catch (err) {
+        updateModelUI('error', backend, null, null, err.message || 'Error al cargar el modelo TensorFlow.js.');
+      }
+    }
+
+    async function loadModelFromFiles(fileList) {
+      const backend = await ensureBackend();
+      const files = Array.from(fileList);
+      const modelJson = files.find((f) => f.name.endsWith('model.json'));
+      const binFiles = files.filter((f) => f.name.endsWith('.bin'));
+      const classFile = files.find((f) => f.name.includes('class') && f.name.endsWith('.json'));
+
+      if (!modelJson) {
+        throw new Error('Debes seleccionar el archivo model.json junto con sus archivos de pesos (.bin).');
+      }
+
+      if (classFile) {
+        try {
+          activeClasses = resolvePlantClasses(JSON.parse(await classFile.text()));
+        } catch {}
+      }
+
+      disposeModels();
+      updateModelUI('loading', backend);
+
+      const manifest = JSON.parse(await modelJson.text());
+      const ordered = [modelJson, ...binFiles];
+
+      if (manifest.format === 'graph-model') {
+        graphModel = await tf.loadGraphModel(tf.io.browserFiles(ordered));
+        updateModelUI('ready', backend, 'GraphModel', null);
+      } else {
+        layersModel = await tf.loadLayersModel(tf.io.browserFiles(ordered));
+        const gLayer = setupGradCam(layersModel);
+        warmUp();
+        updateModelUI('ready', backend, 'LayersModel', gLayer);
+      }
+    }
+
+    function preprocessImage(imgEl, mode) {
+      return tf.tidy(() => {
+        const raw = tf.browser.fromPixels(imgEl).toFloat();
+        const resized = tf.image.resizeBilinear(raw, [INPUT_SIZE, INPUT_SIZE], true);
+        let processed;
+        if (mode === 'caffe') {
+          const bgr = tf.reverse(resized, -1);
+          const meanBGR = tf.tensor1d([103.939, 116.779, 123.68]);
+          processed = tf.sub(bgr, meanBGR);
+        } else if (mode === 'tf') {
+          processed = tf.sub(tf.div(resized, 127.5), 1.0);
+        } else {
+          processed = tf.div(resized, 255.0);
+        }
+        return processed.expandDims(0);
+      });
+    }
+
+    function renderGradCamCanvases(imgEl, values, width, height) {
+      const heatCanvas = document.createElement('canvas');
+      heatCanvas.width = width;
+      heatCanvas.height = height;
+      const heatCtx = heatCanvas.getContext('2d');
+      const imgData = heatCtx.createImageData(width, height);
+      const data = imgData.data;
+
+      let sum = 0, maxAct = 0, highFocus = 0;
+      const total = width * height;
+
+      for (let i = 0; i < total; i++) {
+        const v = Math.max(0, Math.min(1, values[i] || 0));
+        sum += v;
+        if (v > maxAct) maxAct = v;
+        if (v >= 0.55) highFocus++;
+
+        const r = Math.max(0, Math.min(255, Math.round(255 * Math.min(4 * v - 1.5, -4 * v + 4.5))));
+        const g = Math.max(0, Math.min(255, Math.round(255 * Math.min(4 * v - 0.5, -4 * v + 3.5))));
+        const b = Math.max(0, Math.min(255, Math.round(255 * Math.min(4 * v + 0.5, -4 * v + 2.5))));
+
+        const off = i * 4;
+        data[off] = r;
+        data[off + 1] = g;
+        data[off + 2] = b;
+        data[off + 3] = Math.round(45 + v * 195);
+      }
+
+      heatCtx.putImageData(imgData, 0, 0);
+
+      const overlayCanvas = document.createElement('canvas');
+      overlayCanvas.width = width;
+      overlayCanvas.height = height;
+      const overlayCtx = overlayCanvas.getContext('2d');
+      overlayCtx.drawImage(imgEl, 0, 0, width, height);
+      overlayCtx.drawImage(heatCanvas, 0, 0, width, height);
+
+      return {
+        heatmapDataUrl: heatCanvas.toDataURL('image/png'),
+        overlayDataUrl: overlayCanvas.toDataURL('image/jpeg', 0.92),
+        stats: {
+          maxActivation: Number((maxAct * 100).toFixed(1)),
+          meanActivation: Number(((sum / Math.max(1, total)) * 100).toFixed(1)),
+          focusedAreaPercent: Number(((highFocus / Math.max(1, total)) * 100).toFixed(1))
+        }
+      };
+    }
+
+    async function computeGradCam(inputTensor, targetClassIdx, imgEl) {
+      if (!gradCamSubModel || !gradCamLayerName) return null;
+
+      const [convOut] = gradCamSubModel.predict(inputTensor);
+      let gradsTensor = null;
+
+      try {
+        const gradFn = tf.grad((convAct) => {
+          const layers = layersModel.layers;
+          const startIdx = layers.findIndex((l) => l.name === gradCamLayerName);
+          let x = convAct;
+          for (let i = startIdx + 1; i < layers.length; i++) {
+            if (layers[i].getClassName() === 'InputLayer') continue;
+            x = layers[i].apply(x);
+          }
+          return tf.gather(tf.squeeze(x), targetClassIdx);
+        });
+
+        gradsTensor = gradFn(convOut);
+        const camData = tf.tidy(() => {
+          const weights = tf.mean(gradsTensor, [0, 1, 2]);
+          const weighted = tf.sum(tf.mul(convOut.squeeze([0]), weights), -1);
+          const reluMap = tf.relu(weighted);
+          const normMap = tf.divNoNan(reluMap, tf.max(reluMap));
+          const w = imgEl.naturalWidth || imgEl.width || INPUT_SIZE;
+          const h = imgEl.naturalHeight || imgEl.height || INPUT_SIZE;
+          const up = tf.image.resizeBilinear(normMap.expandDims(-1), [h, w], true);
+          return { values: up.squeeze([-1]).dataSync(), width: w, height: h };
+        });
+
+        const rendered = renderGradCamCanvases(imgEl, camData.values, camData.width, camData.height);
+        return { ...rendered, targetLayerName: gradCamLayerName };
+      } catch {
+        const camData = tf.tidy(() => {
+          const energy = tf.mean(tf.relu(convOut.squeeze([0])), -1);
+          const normMap = tf.divNoNan(energy, tf.max(energy));
+          const w = imgEl.naturalWidth || imgEl.width || INPUT_SIZE;
+          const h = imgEl.naturalHeight || imgEl.height || INPUT_SIZE;
+          const up = tf.image.resizeBilinear(normMap.expandDims(-1), [h, w], true);
+          return { values: up.squeeze([-1]).dataSync(), width: w, height: h };
+        });
+        const rendered = renderGradCamCanvases(imgEl, camData.values, camData.width, camData.height);
+        return { ...rendered, targetLayerName: `${gradCamLayerName} (Activación Espacial)` };
+      } finally {
+        convOut.dispose();
+        if (gradsTensor) gradsTensor.dispose();
+      }
+    }
+
+    async function analyzeImage() {
+      if (!currentImageDataUrl || !modelReady) return;
+      const errBox = $('runtime-error');
+      errBox.classList.add('hidden');
+      const btn = $('btn-analyze');
+      btn.disabled = true;
+      btn.textContent = 'Ejecutando Inferencia y Grad-CAM...';
+
+      try {
+        const imgEl = await new Promise((resolve, reject) => {
+          const img = new Image();
+          img.onload = () => resolve(img);
+          img.onerror = () => reject(new Error('No se pudo decodificar la imagen.'));
+          img.src = currentImageDataUrl;
+        });
+
+        const mode = $('preprocess-select').value;
+        const t0 = performance.now();
+        const inputTensor = preprocessImage(imgEl, mode);
+
+        try {
+          const probs = tf.tidy(() => {
+            const rawOut = layersModel ? layersModel.predict(inputTensor) : graphModel.predict(inputTensor);
+            const squeezed = rawOut.squeeze();
+            const sum = squeezed.sum().dataSync()[0];
+            const probTensor = Math.abs(sum - 1.0) < 0.05 ? squeezed : tf.softmax(squeezed);
+            return probTensor.dataSync();
+          });
+
+          const ranked = Array.from(probs)
+            .map((probability, idx) => ({
+              classInfo: activeClasses[idx] || {
+                index: idx, id: `Class_${idx}`, crop: 'Tomate', commonName: `Clase #${idx}`,
+                pathogen: 'Desconocido', isHealthy: false, severity: 'moderada',
+                description: 'Clase detectada por el modelo.', symptoms: ['Consultar class_indices.json.'], recommendations: ['Verificar mapeo de índices.']
+              },
+              probability
+            }))
+            .sort((a, b) => b.probability - a.probability);
+
+          const topPrediction = ranked[0];
+          const gradCam = await computeGradCam(inputTensor, topPrediction.classInfo.index, imgEl);
+          const inferenceTimeMs = Math.round(performance.now() - t0);
+
+          currentDiagnosis = {
+            id: `diag-${Date.now()}`,
+            timestamp: new Date().toISOString(),
+            imageDataUrl: currentImageDataUrl,
+            topPrediction,
+            topPredictions: ranked.slice(0, 4),
+            gradCam,
+            inferenceTimeMs,
+            preprocessingUsed: mode
+          };
+
+          renderDiagnosis(currentDiagnosis);
+          await saveHistory(currentDiagnosis);
+        } finally {
+          inputTensor.dispose();
+        }
+      } catch (err) {
+        errBox.textContent = err.message || 'Error durante la inferencia.';
+        errBox.classList.remove('hidden');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Analizar Patología con ResNet50';
+      }
+    }
+
+    function renderDiagnosis(diag) {
+      $('result-empty-card').classList.add('hidden');
+      $('result-card').classList.remove('hidden');
+
+      const info = diag.topPrediction.classInfo;
+      const pct = (diag.topPrediction.probability * 100).toFixed(2);
+
+      $('inference-meta').innerHTML = `Inferencia local en <strong>${diag.inferenceTimeMs} ms</strong> · Modo <code>${diag.preprocessingUsed}</code>`;
+
+      const badge = $('severity-badge');
+      badge.className = `severity-badge severity-${info.severity}`;
+      badge.textContent = info.isHealthy ? 'Planta Sana' : `Severidad ${info.severity.charAt(0).toUpperCase() + info.severity.slice(1)}`;
+
+      $('diag-crop').textContent = info.crop;
+      $('diag-name').textContent = info.commonName;
+      $('diag-pathogen').innerHTML = `Agente causal: <em>${info.pathogen}</em>`;
+      $('diag-confidence').textContent = `${pct}%`;
+
+      const prog = $('diag-progress');
+      prog.className = `progress-fill ${info.isHealthy ? 'fill-healthy' : 'fill-disease'}`;
+      prog.style.width = `${Math.min(100, Number(pct))}%`;
+
+      // Grad-CAM
+      const controls = $('gradcam-controls');
+      const metrics = $('gradcam-metrics');
+      const note = $('gradcam-note');
+
+      if (diag.gradCam) {
+        controls.classList.remove('hidden');
+        note.classList.add('hidden');
+        $('gradcam-image').src = diag.gradCam.overlayDataUrl;
+        controls.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.mode === 'overlay'));
+        metrics.innerHTML = `
+          <div class="metric-chip">Capa: <strong>${diag.gradCam.targetLayerName}</strong></div>
+          <div class="metric-chip">Activación media: <strong>${diag.gradCam.stats.meanActivation}%</strong></div>
+          <div class="metric-chip">Área focalizada: <strong>${diag.gradCam.stats.focusedAreaPercent}%</strong></div>
+        `;
+      } else {
+        controls.classList.add('hidden');
+        metrics.innerHTML = '';
+        $('gradcam-image').src = diag.imageDataUrl;
+        note.textContent = 'GraphModel no expone capas intermedias para Grad-CAM; exporta desde Keras (.h5) para habilitar gradientes.';
+        note.classList.remove('hidden');
+      }
+
+      // Top 4
+      $('top-list').innerHTML = diag.topPredictions.map((item) => {
+        const p = (item.probability * 100).toFixed(1);
+        return `
+          <div>
+            <div class="top-item-info">
+              <span class="top-crop">${item.classInfo.crop}</span>
+              <span class="top-name">${item.classInfo.commonName}</span>
+              <strong>${p}%</strong>
+            </div>
+            <div class="mini-track"><div class="mini-fill" style="width:${Math.min(100, Number(p))}%"></div></div>
+          </div>
+        `;
+      }).join('');
+
+      // Guía agronómica
+      $('agronomic-desc').textContent = info.description;
+      $('symptoms-list').innerHTML = info.symptoms.map((s) => `<li>${s}</li>`).join('');
+      $('recommendations-list').innerHTML = info.recommendations.map((r) => `<li>${r}</li>`).join('');
+    }
+
+    // Historial Local
+    function getHistory() {
+      try {
+        return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+      } catch {
+        return [];
+      }
+    }
+
+    async function saveHistory(diag) {
+      const thumb = await new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          const scale = Math.min(1, 140 / Math.max(img.width, img.height));
+          const c = document.createElement('canvas');
+          c.width = Math.max(1, Math.round(img.width * scale));
+          c.height = Math.max(1, Math.round(img.height * scale));
+          c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+          resolve(c.toDataURL('image/jpeg', 0.72));
+        };
+        img.onerror = () => resolve(diag.imageDataUrl);
+        img.src = diag.imageDataUrl;
+      });
+
+      const entry = {
+        id: diag.id,
+        timestamp: diag.timestamp,
+        thumbnailDataUrl: thumb,
+        crop: diag.topPrediction.classInfo.crop,
+        commonName: diag.topPrediction.classInfo.commonName,
+        classId: diag.topPrediction.classInfo.id,
+        isHealthy: diag.topPrediction.classInfo.isHealthy,
+        confidence: Number((diag.topPrediction.probability * 100).toFixed(2)),
+        inferenceTimeMs: diag.inferenceTimeMs
+      };
+
+      const updated = [entry, ...getHistory()].slice(0, 50);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      renderHistory();
+    }
+
+    function renderHistory() {
+      const all = getHistory();
+      const filter = $('history-filter').value;
+      const filtered = filter === 'Todos' ? all : all.filter((e) => e.crop === filter);
+
+      $('history-title').textContent = `Historial Local de Diagnósticos (${all.length})`;
+      $('btn-export-csv').classList.toggle('hidden', all.length === 0);
+      $('btn-clear-history').classList.toggle('hidden', all.length === 0);
+      $('history-empty').classList.toggle('hidden', filtered.length > 0);
+
+      $('history-grid').innerHTML = filtered.map((item) => `
+        <article class="history-item">
+          <img src="${item.thumbnailDataUrl}" alt="${item.commonName}" class="history-thumb" />
+          <div class="history-body">
+            <div class="history-top-row">
+              <span class="history-crop">${item.crop}</span>
+              <span>${new Date(item.timestamp).toLocaleDateString('es-PE', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+            </div>
+            <h4 class="history-diagnosis">${item.commonName}</h4>
+            <div class="history-meta">
+              <span class="${item.isHealthy ? 'text-healthy' : 'text-disease'}">${item.confidence.toFixed(1)}% confianza</span>
+              <span>${item.inferenceTimeMs} ms</span>
+            </div>
+          </div>
+          <button type="button" class="btn-icon-delete" onclick="deleteHistoryItem('${item.id}')" title="Eliminar">✕</button>
+        </article>
+      `).join('');
+    }
+
+    window.deleteHistoryItem = (id) => {
+      const updated = getHistory().filter((e) => e.id !== id);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      renderHistory();
+    };
+
+    // Cámara y archivos
+    function stopCamera() {
+      if (cameraStream) {
+        cameraStream.getTracks().forEach((t) => t.stop());
+        cameraStream = null;
+      }
+      $('camera-viewport').classList.add('hidden');
+    }
+
+    async function startCamera(mode = facingMode) {
+      $('camera-error').classList.add('hidden');
+      stopCamera();
+      try {
+        cameraStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: mode }, width: { ideal: 1280 }, height: { ideal: 720 } },
+          audio: false
+        });
+        $('dropzone').classList.add('hidden');
+        $('preview-container').classList.add('hidden');
+        $('camera-viewport').classList.remove('hidden');
+        const video = $('camera-video');
+        video.srcObject = cameraStream;
+        await video.play();
+      } catch {
+        $('camera-error').textContent = 'No se pudo acceder a la cámara. Verifica permisos o selecciona un archivo.';
+        $('camera-error').classList.remove('hidden');
+      }
+    }
+
+    function setSelectedImage(dataUrl) {
+      stopCamera();
+      currentImageDataUrl = dataUrl;
+      $('preview-image').src = dataUrl;
+      $('dropzone').classList.add('hidden');
+      $('preview-container').classList.remove('hidden');
+      $('btn-analyze').disabled = !modelReady;
+    }
+
+    function clearSelectedImage() {
+      currentImageDataUrl = null;
+      currentDiagnosis = null;
+      $('preview-container').classList.add('hidden');
+      $('dropzone').classList.remove('hidden');
+      $('result-card').classList.add('hidden');
+      $('result-empty-card').classList.remove('hidden');
+    }
+
+    // Eventos UI
+    $('btn-upload-model').addEventListener('click', () => $('model-files-input').click());
+    $('model-files-input').addEventListener('change', async (e) => {
+      if (!e.target.files?.length) return;
+      $('runtime-error').classList.add('hidden');
+      try {
+        await loadModelFromFiles(e.target.files);
+      } catch (err) {
+        $('runtime-error').textContent = err.message;
+        $('runtime-error').classList.remove('hidden');
+      }
+      e.target.value = '';
+    });
+
+    $('btn-select-file').addEventListener('click', () => $('image-file-input').click());
+    $('btn-change-img').addEventListener('click', () => $('image-file-input').click());
+    $('image-file-input').addEventListener('change', (e) => {
+      const file = e.target.files?.[0];
+      if (!file || !file.type.startsWith('image/')) return;
+      const reader = new FileReader();
+      reader.onload = () => setSelectedImage(reader.result);
+      reader.readAsDataURL(file);
+      e.target.value = '';
+    });
+
+    const dz = $('dropzone');
+    dz.addEventListener('dragover', (e) => { e.preventDefault(); dz.classList.add('dragover'); });
+    dz.addEventListener('dragleave', () => dz.classList.remove('dragover'));
+    dz.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dz.classList.remove('dragover');
+      const file = e.dataTransfer.files?.[0];
+      if (!file || !file.type.startsWith('image/')) return;
+      const reader = new FileReader();
+      reader.onload = () => setSelectedImage(reader.result);
+      reader.readAsDataURL(file);
+    });
+
+    $('btn-open-cam').addEventListener('click', () => startCamera());
+    $('btn-switch-cam').addEventListener('click', () => {
+      facingMode = facingMode === 'environment' ? 'user' : 'environment';
+      startCamera(facingMode);
+    });
+    $('btn-stop-cam').addEventListener('click', () => {
+      stopCamera();
+      $('dropzone').classList.remove('hidden');
+    });
+    $('btn-capture-frame').addEventListener('click', () => {
+      const v = $('camera-video');
+      const c = document.createElement('canvas');
+      c.width = v.videoWidth || 640;
+      c.height = v.videoHeight || 480;
+      c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+      setSelectedImage(c.toDataURL('image/jpeg', 0.92));
+    });
+
+    $('btn-clear-img').addEventListener('click', clearSelectedImage);
+    $('btn-analyze').addEventListener('click', analyzeImage);
+
+    $('gradcam-controls').addEventListener('click', (e) => {
+      const btn = e.target.closest('button');
+      if (!btn || !currentDiagnosis?.gradCam) return;
+      const mode = btn.dataset.mode;
+      $('gradcam-controls').querySelectorAll('button').forEach((b) => b.classList.toggle('active', b === btn));
+      $('gradcam-image').src =
+        mode === 'original' ? currentDiagnosis.imageDataUrl :
+        mode === 'heatmap' ? currentDiagnosis.gradCam.heatmapDataUrl :
+        currentDiagnosis.gradCam.overlayDataUrl;
+    });
+
+    $('history-filter').addEventListener('change', renderHistory);
+    $('btn-clear-history').addEventListener('click', () => {
+      localStorage.removeItem(STORAGE_KEY);
+      renderHistory();
+    });
+    $('btn-export-csv').addEventListener('click', () => {
+      const entries = getHistory();
+      if (!entries.length) return;
+      const headers = ['ID', 'Fecha', 'Cultivo', 'Diagnostico', 'Clase_Modelo', 'Confianza_%', 'Tiempo_ms'];
+      const rows = entries.map((e) => [
+        e.id, new Date(e.timestamp).toLocaleString('es-PE'), e.crop,
+        `"${e.commonName.replace(/"/g, '""')}"`, e.classId, e.confidence.toFixed(2), e.inferenceTimeMs
+      ]);
+      const csv = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `historial_fitopatologia_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+    });
+
+    // Inicialización
+    renderHistory();
+    loadModelFromUrl('./model/model.json');
+  </script>
+</body>
+</html>
