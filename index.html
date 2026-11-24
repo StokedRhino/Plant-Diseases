@@ -2,27 +2,30 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
-  <meta name="theme-color" content="#0b0f14" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#090d12" />
   <meta name="description" content="Diagnóstico fitopatológico local con ResNet50, TensorFlow.js y mapas de atención Grad-CAM." />
   <title>PhytoVision AI · ResNet50 + TensorFlow.js + Grad-CAM</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2322c55e' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z'/%3E%3Cpath d='M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12'/%3E%3C/svg%3E" />
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <style>
     :root {
-      --bg-primary: #0b0f14;
-      --bg-surface: #121821;
-      --bg-elevated: #192230;
-      --border-subtle: #263244;
+      --bg-primary: #090d12;
+      --bg-surface: #111822;
+      --bg-elevated: #182230;
+      --bg-input: #0c121a;
+      --border-subtle: #253244;
+      --border-hover: #3b4f6b;
       --text-primary: #f1f5f9;
       --text-secondary: #94a3b8;
       --text-muted: #64748b;
       --accent-green: #22c55e;
       --accent-green-hover: #16a34a;
-      --accent-emerald-bg: rgba(34, 197, 94, 0.12);
-      --radius-lg: 14px;
-      --radius-md: 10px;
-      --radius-sm: 6px;
+      --shadow-card: 0 10px 30px -10px rgba(0, 0, 0, 0.55);
+      --radius-lg: 16px;
+      --radius-md: 11px;
+      --radius-sm: 7px;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -30,24 +33,28 @@
     body {
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       background-color: var(--bg-primary);
+      background-image: radial-gradient(circle at 50% 0%, rgba(34, 197, 94, 0.08), transparent 45%);
       color: var(--text-primary);
       line-height: 1.5;
       -webkit-font-smoothing: antialiased;
+      min-height: 100vh;
     }
 
     code {
       font-family: 'JetBrains Mono', 'Fira Code', monospace;
       font-size: 0.84em;
-      background: rgba(255, 255, 255, 0.06);
-      padding: 0.15rem 0.4rem;
-      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.07);
+      padding: 0.15rem 0.42rem;
+      border-radius: 5px;
     }
 
     .hidden { display: none !important; }
 
     /* Header */
     .app-header {
-      background: var(--bg-surface);
+      background: rgba(17, 24, 34, 0.9);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
       border-bottom: 1px solid var(--border-subtle);
       position: sticky;
       top: 0;
@@ -55,9 +62,9 @@
     }
 
     .header-inner {
-      max-width: 1320px;
+      max-width: 1340px;
       margin: 0 auto;
-      padding: 0.9rem 1.25rem;
+      padding: 0.85rem 1.25rem;
       display: flex;
       flex-wrap: wrap;
       align-items: center;
@@ -68,31 +75,40 @@
     .brand-group { display: flex; align-items: center; gap: 0.75rem; }
 
     .brand-icon {
-      width: 40px;
-      height: 40px;
+      width: 42px;
+      height: 42px;
       border-radius: var(--radius-md);
-      background: var(--accent-emerald-bg);
-      border: 1px solid rgba(34, 197, 94, 0.35);
+      background: linear-gradient(135deg, rgba(34, 197, 94, 0.2), rgba(16, 185, 129, 0.08));
+      border: 1px solid rgba(34, 197, 94, 0.4);
       color: var(--accent-green);
       display: flex;
       align-items: center;
       justify-content: center;
+      box-shadow: 0 0 20px rgba(34, 197, 94, 0.14);
     }
 
-    .brand-title { font-size: 1.15rem; font-weight: 700; letter-spacing: -0.01em; }
-    .brand-subtitle { font-size: 0.8rem; color: var(--text-secondary); }
+    .brand-title { font-size: 1.15rem; font-weight: 700; letter-spacing: -0.015em; }
+    .brand-subtitle { font-size: 0.79rem; color: var(--text-secondary); }
 
     .header-controls { display: flex; align-items: center; gap: 0.65rem; flex-wrap: wrap; }
 
     .status-pill {
       display: inline-flex;
       align-items: center;
-      gap: 0.4rem;
-      padding: 0.38rem 0.75rem;
+      gap: 0.45rem;
+      padding: 0.42rem 0.8rem;
       border-radius: 999px;
-      font-size: 0.8rem;
+      font-size: 0.79rem;
       font-weight: 600;
       border: 1px solid var(--border-subtle);
+    }
+
+    .status-pill::before {
+      content: "";
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: currentColor;
     }
 
     .status-ready { background: rgba(34, 197, 94, 0.12); border-color: rgba(34, 197, 94, 0.4); color: #4ade80; }
@@ -100,10 +116,10 @@
     .status-missing, .status-error { background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.4); color: #fbbf24; }
 
     .model-meta-bar {
-      max-width: 1320px;
+      max-width: 1340px;
       margin: 0 auto;
-      padding: 0.4rem 1.25rem 0.6rem;
-      border-top: 1px solid rgba(255, 255, 255, 0.04);
+      padding: 0.45rem 1.25rem 0.65rem;
+      border-top: 1px solid rgba(255, 255, 255, 0.05);
       display: flex;
       flex-wrap: wrap;
       gap: 1.25rem;
@@ -113,7 +129,7 @@
 
     /* Main */
     .main-container {
-      max-width: 1320px;
+      max-width: 1340px;
       margin: 0 auto;
       padding: 1.25rem;
       display: flex;
@@ -136,7 +152,8 @@
       background: var(--bg-surface);
       border: 1px solid var(--border-subtle);
       border-radius: var(--radius-lg);
-      padding: 1.25rem;
+      padding: 1.3rem;
+      box-shadow: var(--shadow-card);
     }
 
     .card-header {
@@ -145,10 +162,10 @@
       align-items: flex-start;
       justify-content: space-between;
       gap: 0.75rem;
-      margin-bottom: 1rem;
+      margin-bottom: 1.05rem;
     }
 
-    .card-title { font-size: 1.02rem; font-weight: 700; }
+    .card-title { font-size: 1.04rem; font-weight: 700; letter-spacing: -0.01em; }
     .card-subtitle { font-size: 0.82rem; color: var(--text-secondary); margin-top: 0.15rem; }
 
     button {
@@ -158,34 +175,68 @@
       border-radius: var(--radius-md);
       font-size: 0.85rem;
       font-weight: 600;
+      min-height: 42px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
       gap: 0.45rem;
       padding: 0.55rem 0.95rem;
-      transition: all 0.15s ease;
+      transition: all 0.16s ease;
+      touch-action: manipulation;
     }
 
     button:disabled { opacity: 0.5; cursor: not-allowed; }
 
-    .btn-primary { background: var(--accent-green); color: #052e16; }
-    .btn-primary:hover:not(:disabled) { background: var(--accent-green-hover); color: #ffffff; }
+    .btn-primary {
+      background: linear-gradient(180deg, #22c55e, #16a34a);
+      color: #04210f;
+      box-shadow: 0 4px 14px rgba(34, 197, 94, 0.22);
+    }
+    .btn-primary:hover:not(:disabled) {
+      background: linear-gradient(180deg, #4ade80, #22c55e);
+      transform: translateY(-1px);
+    }
 
-    .btn-secondary { background: var(--bg-elevated); color: var(--text-primary); border: 1px solid var(--border-subtle); }
-    .btn-secondary:hover:not(:disabled) { border-color: #475569; background: #222e40; }
+    .btn-secondary {
+      background: var(--bg-elevated);
+      color: var(--text-primary);
+      border: 1px solid var(--border-subtle);
+    }
+    .btn-secondary:hover:not(:disabled) {
+      border-color: var(--border-hover);
+      background: #202d3f;
+    }
 
     .btn-ghost { background: transparent; color: var(--text-secondary); }
     .btn-ghost:hover:not(:disabled) { background: rgba(255, 255, 255, 0.06); color: var(--text-primary); }
     .btn-danger:hover:not(:disabled) { color: #f87171; }
 
-    select {
-      background: var(--bg-elevated);
+    select, input[type="url"], input[type="text"] {
+      background: var(--bg-input);
       color: var(--text-primary);
       border: 1px solid var(--border-subtle);
-      border-radius: var(--radius-sm);
-      padding: 0.38rem 0.6rem;
-      font-size: 0.8rem;
+      border-radius: var(--radius-md);
       font-family: inherit;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    select {
+      padding: 0.42rem 0.65rem;
+      font-size: 0.8rem;
+      min-height: 36px;
+    }
+
+    input[type="url"], input[type="text"] {
+      padding: 0.55rem 0.8rem;
+      font-size: 16px;
+      min-height: 42px;
+      width: 100%;
+    }
+
+    input[type="url"]:focus, input[type="text"]:focus, select:focus {
+      outline: none;
+      border-color: var(--accent-green);
+      box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.14);
     }
 
     .setup-banner {
@@ -213,60 +264,174 @@
     }
 
     .alert {
-      padding: 0.75rem 1rem;
+      padding: 0.78rem 1rem;
       border-radius: var(--radius-md);
-      font-size: 0.85rem;
-      margin-bottom: 0.75rem;
+      font-size: 0.84rem;
+      margin-bottom: 0.85rem;
+      line-height: 1.45;
     }
     .alert-warning { background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35); color: #fde68a; }
     .alert-error { background: rgba(239, 68, 68, 0.12); border: 1px solid rgba(239, 68, 68, 0.4); color: #fca5a5; }
 
-    /* Dropzone & Preview */
+    /* Dropzone & URL */
     .preprocess-selector { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.78rem; color: var(--text-secondary); }
 
     .dropzone {
       border: 2px dashed var(--border-subtle);
       border-radius: var(--radius-lg);
-      padding: 2.5rem 1.25rem;
+      padding: 2rem 1.2rem;
       text-align: center;
-      background: rgba(255, 255, 255, 0.015);
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.005));
       transition: all 0.2s ease;
     }
-    .dropzone.dragover { border-color: var(--accent-green); background: rgba(34, 197, 94, 0.06); }
+    .dropzone.dragover {
+      border-color: var(--accent-green);
+      background: rgba(34, 197, 94, 0.08);
+    }
 
     .dropzone-icon {
-      width: 54px; height: 54px; margin: 0 auto 0.85rem;
-      border-radius: 50%; background: var(--bg-elevated); color: var(--accent-green);
+      width: 56px; height: 56px; margin: 0 auto 0.85rem;
+      border-radius: 50%;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      color: var(--accent-green);
       display: flex; align-items: center; justify-content: center;
     }
     .dropzone-title { font-weight: 600; font-size: 0.98rem; }
     .dropzone-hint { font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem; }
-    .dropzone-buttons { margin-top: 1.25rem; display: flex; justify-content: center; gap: 0.65rem; flex-wrap: wrap; }
 
-    .camera-viewport { display: flex; flex-direction: column; gap: 0.75rem; }
-    .camera-video { width: 100%; max-height: 380px; object-fit: cover; border-radius: var(--radius-md); background: #000; }
-    .camera-actions { display: flex; justify-content: center; gap: 0.65rem; flex-wrap: wrap; }
+    .dropzone-buttons {
+      margin-top: 1.2rem;
+      display: flex;
+      justify-content: center;
+      gap: 0.6rem;
+      flex-wrap: wrap;
+    }
 
+    .url-divider {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin: 1.15rem 0 0.9rem;
+      color: var(--text-muted);
+      font-size: 0.76rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .url-divider::before, .url-divider::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: var(--border-subtle);
+    }
+
+    .url-input-group {
+      display: flex;
+      gap: 0.5rem;
+      align-items: stretch;
+    }
+    .url-input-group input {
+      flex: 1;
+      min-width: 0;
+    }
+    .url-input-group button {
+      flex-shrink: 0;
+      padding: 0 1rem;
+    }
+
+    /* Camera Viewport */
+    .camera-viewport { display: flex; flex-direction: column; gap: 0.85rem; }
+    .camera-frame {
+      position: relative;
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      background: #05070a;
+      border: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 260px;
+    }
+    .camera-video {
+      width: 100%;
+      max-height: 400px;
+      object-fit: cover;
+      display: block;
+    }
+    .camera-video.mirrored { transform: scaleX(-1); }
+
+    .camera-reticle {
+      position: absolute;
+      inset: 14%;
+      border: 1.5px dashed rgba(74, 222, 128, 0.55);
+      border-radius: 18px;
+      pointer-events: none;
+      box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.25);
+    }
+    .camera-badge {
+      position: absolute;
+      top: 0.65rem;
+      left: 0.65rem;
+      background: rgba(9, 13, 18, 0.78);
+      backdrop-filter: blur(6px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: #e2e8f0;
+      font-size: 0.74rem;
+      font-weight: 600;
+      padding: 0.25rem 0.6rem;
+      border-radius: 999px;
+    }
+    .camera-actions {
+      display: grid;
+      grid-template-columns: 1fr 1.4fr auto;
+      gap: 0.55rem;
+    }
+
+    /* Preview */
     .preview-container { display: flex; flex-direction: column; gap: 0.9rem; }
     .preview-image-wrapper {
-      position: relative; border-radius: var(--radius-md); overflow: hidden;
-      background: #070a0e; border: 1px solid var(--border-subtle); display: flex; justify-content: center;
+      position: relative;
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      background: #070a0e;
+      border: 1px solid var(--border-subtle);
+      display: flex;
+      justify-content: center;
     }
     .preview-image { max-width: 100%; max-height: 360px; object-fit: contain; }
     .btn-icon-close {
-      position: absolute; top: 0.6rem; right: 0.6rem; width: 32px; height: 32px; padding: 0;
-      border-radius: 50%; background: rgba(11, 15, 20, 0.82); color: #f8fafc; border: 1px solid var(--border-subtle);
+      position: absolute; top: 0.6rem; right: 0.6rem; width: 34px; height: 34px; min-height: 34px; padding: 0;
+      border-radius: 50%; background: rgba(11, 15, 20, 0.85); color: #f8fafc; border: 1px solid var(--border-subtle);
     }
     .preview-actions { display: flex; justify-content: space-between; gap: 0.65rem; flex-wrap: wrap; }
     .btn-analyze { flex: 1; }
 
     /* Results */
-    .result-empty { min-height: 340px; display: flex; align-items: center; justify-content: center; }
-    .empty-state { text-align: center; max-width: 380px; color: var(--text-secondary); display: flex; flex-direction: column; align-items: center; gap: 0.6rem; }
-    .empty-state h3 { color: var(--text-primary); font-size: 1rem; }
+    .result-empty { min-height: 360px; display: flex; align-items: center; justify-content: center; }
+    .empty-state {
+      text-align: center;
+      max-width: 390px;
+      color: var(--text-secondary);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.65rem;
+    }
+    .empty-icon {
+      width: 50px;
+      height: 50px;
+      border-radius: 14px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .empty-state h3 { color: var(--text-primary); font-size: 1.02rem; }
     .empty-state p { font-size: 0.84rem; }
 
-    .severity-badge { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.32rem 0.7rem; border-radius: 999px; font-size: 0.78rem; font-weight: 600; }
+    .severity-badge { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.34rem 0.75rem; border-radius: 999px; font-size: 0.78rem; font-weight: 600; }
     .severity-ninguna { background: rgba(34, 197, 94, 0.14); color: #4ade80; }
     .severity-moderada { background: rgba(245, 158, 11, 0.14); color: #fbbf24; }
     .severity-alta { background: rgba(249, 115, 22, 0.16); color: #fb923c; }
@@ -274,10 +439,10 @@
 
     .primary-diagnosis-box {
       background: var(--bg-elevated); border: 1px solid var(--border-subtle);
-      border-radius: var(--radius-md); padding: 1rem; margin-bottom: 1rem;
+      border-radius: var(--radius-md); padding: 1.05rem; margin-bottom: 1rem;
     }
     .diagnosis-crop-tag { display: inline-block; font-size: 0.74rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--accent-green); margin-bottom: 0.25rem; }
-    .diagnosis-name { font-size: 1.2rem; font-weight: 700; }
+    .diagnosis-name { font-size: 1.22rem; font-weight: 700; }
     .diagnosis-pathogen { font-size: 0.84rem; color: var(--text-secondary); margin-top: 0.15rem; }
 
     .confidence-meter { margin-top: 0.85rem; }
@@ -288,11 +453,11 @@
     .fill-disease { background: linear-gradient(90deg, #f59e0b, #ef4444); }
 
     /* Grad-CAM */
-    .gradcam-section { border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 0.9rem; margin-bottom: 1rem; background: rgba(0, 0, 0, 0.2); }
+    .gradcam-section { border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 0.95rem; margin-bottom: 1rem; background: rgba(0, 0, 0, 0.22); }
     .gradcam-header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; }
     .gradcam-title { font-weight: 600; font-size: 0.88rem; }
     .segmented-control { display: inline-flex; background: var(--bg-primary); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 2px; }
-    .segmented-control button { padding: 0.28rem 0.6rem; font-size: 0.76rem; border-radius: 4px; background: transparent; color: var(--text-secondary); }
+    .segmented-control button { min-height: 30px; padding: 0.25rem 0.65rem; font-size: 0.76rem; border-radius: 5px; background: transparent; color: var(--text-secondary); }
     .segmented-control button.active { background: var(--bg-elevated); color: var(--text-primary); }
 
     .gradcam-visual-frame { display: flex; justify-content: center; background: #070a0e; border-radius: var(--radius-sm); overflow: hidden; }
@@ -304,9 +469,9 @@
     /* Top 4 */
     .top-predictions-section { margin-bottom: 1rem; }
     .top-predictions-section h4 { font-size: 0.86rem; color: var(--text-secondary); margin-bottom: 0.55rem; }
-    .top-list { display: flex; flex-direction: column; gap: 0.5rem; }
-    .top-item-info { display: flex; align-items: center; gap: 0.45rem; font-size: 0.82rem; margin-bottom: 0.2rem; }
-    .top-crop { font-size: 0.7rem; font-weight: 700; padding: 0.1rem 0.4rem; border-radius: 4px; background: var(--bg-elevated); color: var(--text-secondary); }
+    .top-list { display: flex; flex-direction: column; gap: 0.55rem; }
+    .top-item-info { display: flex; align-items: center; gap: 0.45rem; font-size: 0.82rem; margin-bottom: 0.22rem; }
+    .top-crop { font-size: 0.7rem; font-weight: 700; padding: 0.1rem 0.42rem; border-radius: 4px; background: var(--bg-elevated); color: var(--text-secondary); }
     .top-name { flex: 1; }
     .mini-track { height: 5px; background: var(--bg-primary); border-radius: 999px; overflow: hidden; }
     .mini-fill { height: 100%; background: #38bdf8; }
@@ -317,13 +482,23 @@
     .agronomic-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
     @media (max-width: 640px) { .agronomic-columns { grid-template-columns: 1fr; } }
     .agronomic-columns h5 { font-size: 0.83rem; color: var(--text-primary); margin-bottom: 0.4rem; }
-    .agronomic-columns ul { padding-left: 1.1rem; font-size: 0.81rem; color: var(--text-secondary); display: flex; flex-direction: column; gap: 0.3rem; }
+    .agronomic-columns ul { padding-left: 1.1rem; font-size: 0.81rem; color: var(--text-secondary); display: flex; flex-direction: column; gap: 0.32rem; }
 
     /* History */
-    .history-actions { display: flex; align-items: center; gap: 0.5rem; }
+    .history-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
     .history-empty { font-size: 0.85rem; color: var(--text-muted); text-align: center; padding: 1.25rem 0; }
-    .history-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 0.85rem; }
-    .history-item { background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 0.65rem; display: flex; align-items: center; gap: 0.75rem; }
+    .history-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 0.85rem; }
+    .history-item {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 0.65rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      transition: border-color 0.15s ease;
+    }
+    .history-item:hover { border-color: var(--border-hover); }
     .history-thumb { width: 58px; height: 58px; border-radius: var(--radius-sm); object-fit: cover; flex-shrink: 0; }
     .history-body { flex: 1; min-width: 0; }
     .history-top-row { display: flex; justify-content: space-between; font-size: 0.72rem; color: var(--text-muted); }
@@ -332,8 +507,20 @@
     .history-meta { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-secondary); }
     .text-healthy { color: #4ade80; }
     .text-disease { color: #fbbf24; }
-    .btn-icon-delete { padding: 0.35rem; background: transparent; color: var(--text-muted); }
+    .btn-icon-delete { min-height: 32px; padding: 0.35rem; background: transparent; color: var(--text-muted); }
     .btn-icon-delete:hover { color: #f87171; }
+
+    @media (max-width: 600px) {
+      .main-container { padding: 0.9rem; }
+      .card { padding: 1rem; }
+      .dropzone { padding: 1.5rem 0.9rem; }
+      .dropzone-buttons { flex-direction: column; }
+      .dropzone-buttons button { width: 100%; }
+      .camera-actions { grid-template-columns: 1fr 1fr; }
+      .camera-actions #btn-stop-cam { grid-column: 1 / -1; }
+      .preview-actions { flex-direction: column-reverse; }
+      .preview-actions button { width: 100%; }
+    }
   </style>
 </head>
 <body>
@@ -354,10 +541,10 @@
 
       <div class="header-controls">
         <div id="model-status-pill" class="status-pill status-loading">Inicializando TF.js...</div>
-        <button type="button" id="btn-upload-model" class="btn-secondary" title="Seleccionar model.json y archivos .bin">
-          Cargar Modelo (.json + .bin)
+        <button type="button" id="btn-upload-model" class="btn-secondary" title="Seleccionar modelo_web.zip o manifest.json y todos los pesos .bin">
+          Cargar Modelo (.zip / .json)
         </button>
-        <input type="file" id="model-files-input" multiple accept=".json,.bin" class="hidden" />
+        <input type="file" id="model-files-input" multiple accept=".zip,.json,.bin" class="hidden" />
       </div>
     </div>
     <div id="model-meta-bar" class="model-meta-bar hidden"></div>
@@ -368,10 +555,10 @@
       <div>
         <h4>Integración del Modelo ResNet50 Entrenado en Google Colab</h4>
         <p id="setup-banner-msg">
-          No se encontró <code>./model/model.json</code> en el repositorio. Sube <code>model.json</code> y sus fragmentos <code>.bin</code> a una carpeta <code>model/</code> en GitHub junto a este <code>index.html</code>, o cárgalos ahora mismo con el botón superior <strong>“Cargar Modelo (.json + .bin)”</strong>.
+          Carga <code>modelo_web.zip</code> generado en la sección 7 del Colab, o selecciona <code>manifest.json</code> y todos los <code>pesos_XX.bin</code>. Para carga automática en GitHub Pages, descomprime los archivos en <code>modelo_web/</code> junto a <code>index.html</code>.
         </p>
         <div class="code-snippet-inline">
-          <code>tensorflowjs_converter --input_format=keras modelo_resnet50.h5 model/</code>
+          <code>Colab → sección 7 → modelo_web.zip</code>
         </div>
       </div>
     </div>
@@ -384,25 +571,27 @@
         <div class="card-header">
           <div>
             <h2 class="card-title">1. Captura de Muestra Foliar</h2>
-            <p class="card-subtitle">Soporta hojas de Tomate, Papa y Maíz (14 clases PlantVillage / PlantDoc)</p>
+            <p class="card-subtitle">14 clases de tomate, papa y maíz · Solo tomate incluye clase sana</p>
           </div>
           <div class="preprocess-selector">
-            <label for="preprocess-select">Preprocesamiento:</label>
-            <select id="preprocess-select">
-              <option value="caffe">ResNet50 Caffe (BGR - Media ImageNet)</option>
-              <option value="tf">TensorFlow (-1 a 1)</option>
-              <option value="rescale">Normalizado (0 a 1)</option>
+            <label for="preprocess-select">Preproc.:</label>
+            <select id="preprocess-select" disabled title="Preprocesamiento fijo del modelo entrenado">
+              <option value="caffe">ResNet50 Caffe (BGR)</option>
             </select>
           </div>
         </div>
 
         <div id="camera-error" class="alert alert-warning hidden"></div>
 
-        <!-- Vista Cámara -->
+        <!-- Vista Cámara en Vivo (WebRTC) -->
         <div id="camera-viewport" class="camera-viewport hidden">
-          <video id="camera-video" playsinline muted class="camera-video"></video>
+          <div class="camera-frame">
+            <video id="camera-video" playsinline webkit-playsinline autoplay muted class="camera-video"></video>
+            <div class="camera-reticle" aria-hidden="true"></div>
+            <span id="camera-mode-label" class="camera-badge">Cámara Trasera</span>
+          </div>
           <div class="camera-actions">
-            <button type="button" id="btn-switch-cam" class="btn-secondary">Cambiar Cámara</button>
+            <button type="button" id="btn-switch-cam" class="btn-secondary">Cambiar Lente</button>
             <button type="button" id="btn-capture-frame" class="btn-primary">Capturar Hoja</button>
             <button type="button" id="btn-stop-cam" class="btn-ghost">Cancelar</button>
           </div>
@@ -422,7 +611,7 @@
           </div>
         </div>
 
-        <!-- Dropzone -->
+        <!-- Dropzone + Cámara + URL -->
         <div id="dropzone" class="dropzone">
           <div class="dropzone-icon" aria-hidden="true">
             <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -431,23 +620,47 @@
               <line x1="12" y1="3" x2="12" y2="15"/>
             </svg>
           </div>
-          <p class="dropzone-title">Arrastra una fotografía de la hoja aquí</p>
-          <p class="dropzone-hint">Procesamiento 100% local en el navegador · Formatos JPG, PNG o WebP</p>
+          <p class="dropzone-title">Arrastra una imagen, tómala con cámara o pégala (Ctrl+V)</p>
+          <p class="dropzone-hint">Procesamiento local · Formatos JPG, PNG o WebP</p>
+
           <div class="dropzone-buttons">
-            <button type="button" id="btn-select-file" class="btn-primary">Seleccionar Archivo</button>
-            <button type="button" id="btn-open-cam" class="btn-secondary">Usar Cámara</button>
+            <button type="button" id="btn-select-file" class="btn-primary">Subir Archivo</button>
+            <button type="button" id="btn-open-cam" class="btn-secondary">Cámara en Vivo</button>
+            <button type="button" id="btn-native-cam" class="btn-secondary" title="Abre la cámara nativa del teléfono">
+              Foto Móvil
+            </button>
+          </div>
+
+          <div class="url-divider">o pega la URL de una imagen</div>
+
+          <div class="url-input-group">
+            <input
+              type="url"
+              id="image-url-input"
+              placeholder="https://ejemplo.com/hoja-tomate.jpg"
+              autocomplete="off"
+              spellcheck="false"
+              aria-label="URL de la imagen de la hoja"
+            />
+            <button type="button" id="btn-load-url" class="btn-secondary">Cargar URL</button>
           </div>
         </div>
 
         <input type="file" id="image-file-input" accept="image/*" class="hidden" />
+        <input type="file" id="native-camera-input" accept="image/*" capture="environment" class="hidden" />
       </section>
 
       <!-- Panel de Resultados -->
       <section id="result-empty-card" class="card result-empty">
         <div class="empty-state">
+          <div class="empty-icon" aria-hidden="true">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+            </svg>
+          </div>
           <h3>Sin diagnóstico activo</h3>
           <p>
-            Carga tu modelo ResNet50 exportado en TensorFlow.js y analiza una muestra foliar para visualizar la clasificación y el mapa de atención Grad-CAM.
+            Carga tu modelo ResNet50 exportado desde la sección 7 de Colab y analiza una muestra foliar (archivo, cámara o URL) para visualizar la clasificación y el mapa Grad-CAM.
           </p>
         </div>
       </section>
@@ -468,7 +681,7 @@
 
           <div class="confidence-meter">
             <div class="confidence-label-row">
-              <span>Confianza del modelo ResNet50</span>
+              <span>Probabilidad estimada por ResNet50</span>
               <strong id="diag-confidence"></strong>
             </div>
             <div class="progress-track">
@@ -500,6 +713,7 @@
 
         <div class="agronomic-details">
           <p id="agronomic-desc" class="agronomic-desc"></p>
+          <p class="agronomic-desc">Clasificación orientativa entre 14 clases; no mide la severidad real de la hoja. Confirma el resultado en campo con un especialista.</p>
           <div class="agronomic-columns">
             <div>
               <h5>Síntomas Clave</h5>
@@ -557,7 +771,7 @@
           'Inicia en hojas inferiores y asciende progresivamente.'
         ],
         recommendations: [
-          'Aplicar fungicidas a base de estrobilurinas o triazoles en estadio VT-R1 si supera el umbral.',
+          'Consultar a un especialista para definir un manejo integrado adecuado.',
           'Practicar rotación de cultivos y manejo de rastrojos infectados.',
           'Utilizar híbridos con resistencia genética comprobada.'
         ]
@@ -578,7 +792,7 @@
         ],
         recommendations: [
           'Monitorear lotes jóvenes antes de la floración.',
-          'Aplicar fungicida foliar solo en híbridos susceptibles con alta presión de inóculo.',
+          'Consultar a un especialista para definir un manejo integrado adecuado.',
           'Evitar siembras tardías en zonas con historial de roya.'
         ]
       },
@@ -597,7 +811,7 @@
           'Esporulación oscura visible en el centro de las lesiones bajo alta humedad.'
         ],
         recommendations: [
-          'Intervenir con fungicidas foliares antes de que las lesiones alcancen la hoja de la mazorca.',
+          'Consultar a un especialista para definir un manejo integrado adecuado.',
           'Incorporar residuos de cosecha para reducir la supervivencia del hongo.',
           'Seleccionar variedades con genes de resistencia Ht.'
         ]
@@ -618,7 +832,7 @@
         ],
         recommendations: [
           'Mantener fertilización nitrogenada y potásica equilibrada.',
-          'Aplicar fungicidas protectores (mancozeb, clorotalonil) o sistémicos (azoxistrobina, difenoconazol).',
+          'Consultar a un especialista para definir un manejo integrado adecuado.',
           'Eliminar plantas voluntarias y rotar con gramíneas.'
         ]
       },
@@ -637,7 +851,7 @@
           'Olor característico a tejido vegetal en descomposición.'
         ],
         recommendations: [
-          'Actuar de inmediato con fungicidas específicos anti-oomicetos (cimoxanil, metalaxil-M, fluopicolida).',
+          'Consultar a un especialista para definir un manejo integrado adecuado.',
           'Eliminar y destruir focos iniciales de infección para frenar la esporulación.',
           'Evitar riego por aspersión en horas nocturnas.'
         ]
@@ -657,7 +871,7 @@
           'Pústulas costrosas elevadas en frutos verdes.'
         ],
         recommendations: [
-          'Aplicar bactericidas cúpricos combinados con mancozeb para reducir resistencia.',
+          'Consultar a un especialista para definir un manejo integrado adecuado.',
           'Evitar labores culturales cuando el follaje esté mojado.',
           'Desinfectar herramientas y usar semilla certificada.'
         ]
@@ -678,7 +892,7 @@
         ],
         recommendations: [
           'Podar hojas basales envejecidas y mejorar la ventilación del cultivo.',
-          'Aplicar fungicidas preventivos y rotar modos de acción FRAC.',
+          'Consultar a un especialista para definir un manejo integrado adecuado.',
           'Usar acolchado (mulch) para evitar salpicaduras desde el suelo.'
         ]
       },
@@ -697,7 +911,7 @@
           'Manchas firmes de color marrón cobrizo en frutos.'
         ],
         recommendations: [
-          'Iniciar control químico preventivo/curativo inmediato ante alertas climáticas.',
+          'Consultar a un especialista para definir un manejo integrado adecuado.',
           'Retirar tejido severamente afectado en bolsas cerradas.',
           'Optimizar el drenaje y reducir humedad relativa en invernadero.'
         ]
@@ -719,7 +933,7 @@
         recommendations: [
           'Incrementar la ventilación y reducir la humedad relativa por debajo del 80%.',
           'Evitar mojar el follaje utilizando riego por goteo.',
-          'Aplicar fungicidas específicos si la infección avanza.'
+          'Consultar a un especialista para definir un manejo integrado adecuado.'
         ]
       },
       {
@@ -738,7 +952,7 @@
         ],
         recommendations: [
           'Eliminar hojas inferiores afectadas y desinfectar tutores.',
-          'Aplicar fungicidas a base de clorotalonil, mancozeb o estrobilurinas.',
+          'Consultar a un especialista para definir un manejo integrado adecuado.',
           'Eliminar malezas solanáceas hospederas alrededor del lote.'
         ]
       },
@@ -757,7 +971,7 @@
           'Desecación foliar y pérdida de vigor de la planta.'
         ],
         recommendations: [
-          'Aplicar acaricidas específicos (abamectina, spiromesifen) o jabón potásico / aceite de neem.',
+          'Consultar a un especialista para definir un manejo integrado adecuado.',
           'Fomentar control biológico con ácaros depredadores (Phytoseiulus persimilis).',
           'Evitar estrés hídrico y exceso de fertilización nitrogenada.'
         ]
@@ -778,7 +992,7 @@
         ],
         recommendations: [
           'Erradicar inmediatamente plantas sintomáticas tempranas para eliminar fuentes de inóculo.',
-          'Controlar el vector (mosca blanca) con trampas cromáticas amarillas e insecticidas selectivos.',
+          'Consultar a un especialista para definir un manejo integrado adecuado.',
           'Utilizar mallas anti-áfidos en viveros y cultivares con resistencia Ty-1 / Ty-3.'
         ]
       },
@@ -797,8 +1011,8 @@
           'Reducción del tamaño y maduración irregular de los frutos.'
         ],
         recommendations: [
-          'No existe cura química; retirar y destruir plantas infectadas sin rozar plantas sanas.',
-          'Desinfectar herramientas y manos con solución de fosfato trisódico o hipoclorito.',
+          'Consultar a un especialista para confirmar el diagnóstico y controlar la propagación.',
+          'Consultar a un especialista para definir un manejo integrado adecuado.',
           'Emplear variedades resistentes con genes Tm-2 / Tm-2².'
         ]
       },
@@ -823,10 +1037,10 @@
     ];
 
     // Estado global
-    let layersModel = null;
-    let graphModel = null;
-    let gradCamSubModel = null;
-    let gradCamLayerName = null;
+    let weights = null;
+    let modelLoading = false;
+    let analyzing = false;
+    const GRAD_LAYER = 'conv5_block3_out';
     let activeClasses = [...DEFAULT_PLANT_CLASSES];
     let modelReady = false;
     let currentImageDataUrl = null;
@@ -834,36 +1048,34 @@
     let cameraStream = null;
     let facingMode = 'environment';
 
-    // Utilidades DOM
     const $ = (id) => document.getElementById(id);
 
-    function resolvePlantClasses(customClassMap) {
-      if (!customClassMap) return [...DEFAULT_PLANT_CLASSES];
-      const orderedIds = Array.isArray(customClassMap)
-        ? customClassMap
-        : Object.entries(customClassMap).sort((a, b) => a[1] - b[1]).map(([k]) => k);
-      if (!orderedIds.length) return [...DEFAULT_PLANT_CLASSES];
+    function showCaptureAlert(msg) {
+      const box = $('camera-error');
+      if (!msg) {
+        box.classList.add('hidden');
+        box.textContent = '';
+        return;
+      }
+      box.textContent = msg;
+      box.classList.remove('hidden');
+    }
 
-      return orderedIds.map((rawId, idx) => {
-        const norm = rawId.trim().toLowerCase();
-        const match = DEFAULT_PLANT_CLASSES.find(
-          (c) => c.id.toLowerCase() === norm || c.id.toLowerCase().replace(/[^a-z0-9]/g, '') === norm.replace(/[^a-z0-9]/g, '')
-        );
-        if (match) return { ...match, index: idx };
-        const isHealthy = norm.includes('healthy') || norm.includes('sano');
-        const crop = norm.includes('potato') || norm.includes('papa') ? 'Papa' : norm.includes('corn') || norm.includes('maize') ? 'Maíz' : 'Tomate';
-        return {
-          index: idx,
-          id: rawId,
-          crop,
-          commonName: rawId.replace(/___/g, ' - ').replace(/_/g, ' '),
-          pathogen: isHealthy ? 'Ninguno detectado' : 'Patógeno identificado por modelo',
-          isHealthy,
-          severity: isHealthy ? 'ninguna' : 'moderada',
-          description: 'Clase cargada desde class_indices.json.',
-          symptoms: [isHealthy ? 'Follaje sin signos visibles de enfermedad.' : 'Alteración foliar detectada por ResNet50.'],
-          recommendations: [isHealthy ? 'Mantener monitoreo preventivo.' : 'Verificar extensión en campo y aplicar manejo integrado.']
-        };
+    function notebookClassId(id) {
+      const crop = id.startsWith('Corn') ? 'maiz' : id.startsWith('Potato') ? 'papa' : 'tomate';
+      const state = id.toLowerCase().replace(/(tomato|potato|corn|maize)[_\s]*/g, '')
+        .replace(/[^a-z]+/g, '_').replace(/^_+|_+$/g, '');
+      return crop + '_' + state;
+    }
+
+    function resolvePlantClasses(ids) {
+      if (!Array.isArray(ids) || ids.length !== 14 || new Set(ids).size !== 14) {
+        throw new Error('El manifiesto debe contener las 14 clases únicas del Colab.');
+      }
+      return ids.map((id, index) => {
+        const match = DEFAULT_PLANT_CLASSES.find((c) => notebookClassId(c.id) === id);
+        if (!match) throw new Error('Clase no reconocida: ' + id);
+        return { ...match, id, index };
       });
     }
 
@@ -882,156 +1094,230 @@
     }
 
     function disposeModels() {
-      if (gradCamSubModel) { gradCamSubModel.dispose(); gradCamSubModel = null; }
-      if (layersModel) { layersModel.dispose(); layersModel = null; }
-      if (graphModel) { graphModel.dispose(); graphModel = null; }
-      gradCamLayerName = null;
+      if (weights) Object.values(weights).forEach((t) => t.dispose());
+      weights = null;
       modelReady = false;
     }
 
-    function setupGradCam(model) {
-      const layers = model.layers;
-      let candidate = null;
-      for (let i = layers.length - 1; i >= 0; i--) {
-        const shape = Array.isArray(layers[i].outputShape) ? layers[i].outputShape : [];
-        if (shape.length === 4 && typeof shape[1] === 'number' && shape[1] >= 4) {
-          candidate = layers[i];
-          break;
+    const STAGES = [[2,3,64,1],[3,4,128,2],[4,6,256,2],[5,3,512,2]];
+    function expectedShapes() {
+      const shapes = {};
+      function add(name, shape) { shapes[name + '/w'] = shape; shapes[name + '/b'] = [shape[shape.length - 1]]; }
+      add('conv1', [7,7,3,64]);
+      let channels = 64;
+      for (const [stage, count, filters] of STAGES) {
+        for (let i = 1; i <= count; i++) {
+          const n = `conv${stage}_block${i}`;
+          if (i === 1) add(n + '_0', [1,1,channels,filters * 4]);
+          add(n + '_1', [1,1,channels,filters]);
+          add(n + '_2', [3,3,filters,filters]);
+          add(n + '_3', [1,1,filters,filters * 4]);
+          channels = filters * 4;
         }
       }
-      if (!candidate) return null;
-      try {
-        const convOut = candidate.output;
-        const modelOut = Array.isArray(model.output) ? model.output[0] : model.output;
-        gradCamSubModel = tf.model({ inputs: model.inputs, outputs: [convOut, modelOut] });
-        gradCamLayerName = candidate.name;
-        return candidate.name;
-      } catch {
-        gradCamSubModel = null;
-        gradCamLayerName = null;
-        return null;
+      add('dense', [2048,14]);
+      return shapes;
+    }
+
+    function decodeHalf(bits) {
+      const sign = bits & 0x8000 ? -1 : 1;
+      const exp = (bits >>> 10) & 31, frac = bits & 1023;
+      if (exp === 0) return sign * frac * 2 ** -24;
+      if (exp === 31) return frac ? NaN : sign * Infinity;
+      return sign * (1 + frac / 1024) * 2 ** (exp - 15);
+    }
+
+    function validateManifest(man) {
+      if (man.format !== 'resnet50-bnfold-v1' || man.input_size !== 224 || man.preprocess !== 'caffe' || !['float16','float32'].includes(man.dtype)) {
+        throw new Error('Formato incompatible. Usa manifest.json de la sección 7 del Colab.');
       }
+      const classes = resolvePlantClasses(man.classes);
+      const expected = expectedShapes(), unit = man.dtype === 'float16' ? 2 : 4;
+      const total = Object.values(expected).reduce((sum, shape) => sum + shape.reduce((a, b) => a * b, 1) * unit, 0);
+      if (man.total_bytes !== total || !Array.isArray(man.tensors) || man.tensors.length !== Object.keys(expected).length || !Array.isArray(man.shards) || !man.shards.length) {
+        throw new Error('Manifiesto incompleto o tamaño incorrecto.');
+      }
+      let end = 0;
+      const seen = new Set();
+      for (const t of [...man.tensors].sort((a, b) => a.offset - b.offset)) {
+        if (!Object.hasOwn(expected, t.name) || seen.has(t.name) || JSON.stringify(t.shape) !== JSON.stringify(expected[t.name]) || t.offset !== end || t.bytes !== expected[t.name].reduce((a, b) => a * b, 1) * unit) {
+          throw new Error('Tensor inválido: ' + t.name);
+        }
+        seen.add(t.name);
+        end += t.bytes;
+      }
+      const names = new Set();
+      let sum = 0;
+      for (const sh of man.shards) {
+        if (!/^pesos_\d+\.bin$/.test(sh.file) || names.has(sh.file) || !Number.isSafeInteger(sh.bytes) || sh.bytes <= 0) {
+          throw new Error('Fragmento inválido.');
+        }
+        names.add(sh.file);
+        sum += sh.bytes;
+      }
+      if (sum !== total || end !== total) throw new Error('Tamaño de los pesos incorrecto.');
+      return classes;
+    }
+
+    async function installModel(man, readShard) {
+      const classes = validateManifest(man);
+      const bytes = new Uint8Array(man.total_bytes);
+      let offset = 0;
+      for (const sh of man.shards) {
+        const buffer = await readShard(sh.file);
+        if (buffer.byteLength !== sh.bytes) throw new Error('Tamaño incorrecto: ' + sh.file);
+        bytes.set(new Uint8Array(buffer), offset);
+        offset += buffer.byteLength;
+      }
+      const view = new DataView(bytes.buffer), unit = man.dtype === 'float16' ? 2 : 4;
+      const next = Object.create(null);
+      try {
+        for (const t of man.tensors) {
+          const data = new Float32Array(t.bytes / unit);
+          for (let i = 0; i < data.length; i++) {
+            const pos = t.offset + i * unit;
+            data[i] = unit === 2 ? decodeHalf(view.getUint16(pos, true)) : view.getFloat32(pos, true);
+            if (!Number.isFinite(data[i])) throw new Error('Peso no finito: ' + t.name);
+          }
+          next[t.name] = tf.tensor(data, t.shape, 'float32');
+        }
+      } catch (err) {
+        Object.values(next).forEach((t) => t.dispose());
+        throw err;
+      }
+      disposeModels();
+      weights = next;
+      activeClasses = classes;
+    }
+
+    function conv(x, n, stride, pad) {
+      return tf.add(tf.conv2d(x, weights[n + '/w'], stride, pad), weights[n + '/b']);
+    }
+
+    function residual(x, n, stride, shortcut) {
+      return tf.tidy(() => {
+        const sc = shortcut ? conv(x, n + '_0', stride, 'valid') : x;
+        let y = tf.relu(conv(x, n + '_1', stride, 'valid'));
+        y = tf.relu(conv(y, n + '_2', 1, 'same'));
+        return tf.relu(tf.add(sc, conv(y, n + '_3', 1, 'valid')));
+      });
+    }
+
+    function extractFeatures(input) {
+      return tf.tidy(() => {
+        let y = tf.relu(conv(tf.pad(input, [[0,0],[3,3],[3,3],[0,0]]), 'conv1', 2, 'valid'));
+        y = tf.maxPool(tf.pad(y, [[0,0],[1,1],[1,1],[0,0]]), 3, 2, 'valid');
+        for (const [stage, count, , stride] of STAGES) {
+          for (let i = 1; i <= count; i++) y = residual(y, `conv${stage}_block${i}`, i === 1 ? stride : 1, i === 1);
+        }
+        return y;
+      });
+    }
+
+    function classify(features) {
+      return tf.softmax(tf.add(tf.matMul(tf.mean(features, [1, 2]), weights['dense/w']), weights['dense/b']));
     }
 
     function warmUp() {
       tf.tidy(() => {
-        const dummy = tf.zeros([1, INPUT_SIZE, INPUT_SIZE, 3]);
-        if (layersModel) layersModel.predict(dummy);
-        else if (graphModel) graphModel.predict(dummy);
+        const p = classify(extractFeatures(tf.zeros([1, 224, 224, 3]))).dataSync();
+        if (p.length !== 14 || !Array.from(p).every(Number.isFinite) || Math.abs(Array.from(p).reduce((a, b) => a + b, 0) - 1) > 0.001) {
+          throw new Error('La prueba de inferencia del modelo no es válida.');
+        }
       });
     }
 
-    function updateModelUI(status, backend, modelType = null, gradLayer = null, errorMsg = '') {
-      const pill = $('model-status-pill');
-      const metaBar = $('model-meta-bar');
-      const banner = $('setup-banner');
-
+    const SETUP_MESSAGE = 'Selecciona modelo_web.zip (sección 7 del Colab) o manifest.json y todos los pesos_XX.bin. En GitHub Pages, coloca los archivos en modelo_web/.';
+    function updateModelUI(status, backend = '', errorMsg = '') {
+      const pill = $('model-status-pill'), meta = $('model-meta-bar'), banner = $('setup-banner');
       pill.className = `status-pill status-${status}`;
-      if (status === 'loading') {
-        pill.textContent = 'Inicializando TF.js...';
-        metaBar.classList.add('hidden');
-      } else if (status === 'ready') {
-        pill.textContent = `Modelo Activo (${backend.toUpperCase()})`;
-        metaBar.innerHTML = `<span>Arquitectura: <strong>${modelType}</strong> (224×224×3)</span><span>Capa Grad-CAM: <strong>${gradLayer || 'No disponible en GraphModel'}</strong></span>`;
-        metaBar.classList.remove('hidden');
-        banner.classList.add('hidden');
-        modelReady = true;
-      } else {
-        pill.textContent = status === 'missing' ? 'Esperando archivos del modelo' : 'Error en modelo';
-        metaBar.classList.add('hidden');
-        if (errorMsg) $('setup-banner-msg').textContent = errorMsg;
-        banner.classList.remove('hidden');
-        modelReady = false;
-      }
-      $('btn-analyze').disabled = !modelReady || !currentImageDataUrl;
+      modelReady = status === 'ready';
+      pill.textContent = status === 'ready' ? `Modelo Activo (${backend.toUpperCase()})` : status === 'loading' ? 'Cargando ResNet50…' : status === 'missing' ? 'Esperando modelo' : 'Error en modelo';
+      meta.classList.toggle('hidden', !modelReady);
+      banner.classList.toggle('hidden', status === 'ready' || status === 'loading');
+      if (modelReady) meta.innerHTML = '<span>Arquitectura: <strong>ResNet50 BN fusionada</strong> (224×224×3)</span><span>Capa Grad-CAM: <strong>conv5_block3_out</strong></span>';
+      else $('setup-banner-msg').textContent = errorMsg || SETUP_MESSAGE;
+      $('btn-analyze').disabled = !modelReady || !currentImageDataUrl || analyzing;
+      $('btn-upload-model').disabled = modelLoading || analyzing;
     }
 
-    async function loadModelFromUrl(url = './model/model.json') {
-      const backend = await ensureBackend();
-      disposeModels();
-      updateModelUI('loading', backend);
+    async function loadModelFromUrl() {
+      if (location.protocol === 'file:') {
+        updateModelUI('missing', '', 'Archivo local: ' + SETUP_MESSAGE);
+        return;
+      }
+      await runLoad(async () => {
+        const root = './modelo_web/';
+        const res = await fetch(root + 'manifest.json', { cache: 'no-store' });
+        if (res.status === 404) return false;
+        if (!res.ok) throw new Error('No se pudo leer manifest.json: HTTP ' + res.status);
+        const man = await res.json();
+        await installModel(man, async (name) => {
+          const r = await fetch(root + name);
+          if (!r.ok) throw new Error('No se pudo cargar ' + name);
+          return r.arrayBuffer();
+        });
+        return true;
+      });
+    }
 
+    async function runLoad(loader) {
+      if (modelLoading || analyzing) return;
+      modelLoading = true;
+      updateModelUI('loading');
       try {
-        const res = await fetch(url, { cache: 'no-store' });
-        if (!res.ok) {
-          updateModelUI(
-            'missing',
-            backend,
-            null,
-            null,
-            'No se encontró ./model/model.json en este repositorio. Sube model.json y sus archivos .bin a una carpeta model/ en GitHub junto a index.html, o cárgalos localmente con el botón superior.'
-          );
+        const backend = await ensureBackend();
+        disposeModels();
+        if (await loader() === false) {
+          updateModelUI('missing');
           return;
         }
-        const manifest = await res.json();
-        try {
-          const clsRes = await fetch('./model/class_indices.json', { cache: 'no-store' });
-          if (clsRes.ok) activeClasses = resolvePlantClasses(await clsRes.json());
-        } catch {}
-
-        if (manifest.format === 'graph-model') {
-          graphModel = await tf.loadGraphModel(url);
-          updateModelUI('ready', backend, 'GraphModel', null);
-        } else {
-          layersModel = await tf.loadLayersModel(url);
-          const gLayer = setupGradCam(layersModel);
-          warmUp();
-          updateModelUI('ready', backend, 'LayersModel', gLayer);
-        }
+        warmUp();
+        updateModelUI('ready', backend);
       } catch (err) {
-        updateModelUI('error', backend, null, null, err.message || 'Error al cargar el modelo TensorFlow.js.');
+        disposeModels();
+        updateModelUI('error', '', err.message || String(err));
+      } finally {
+        modelLoading = false;
+        $('btn-upload-model').disabled = analyzing;
       }
     }
 
     async function loadModelFromFiles(fileList) {
-      const backend = await ensureBackend();
       const files = Array.from(fileList);
-      const modelJson = files.find((f) => f.name.endsWith('model.json'));
-      const binFiles = files.filter((f) => f.name.endsWith('.bin'));
-      const classFile = files.find((f) => f.name.includes('class') && f.name.endsWith('.json'));
-
-      if (!modelJson) {
-        throw new Error('Debes seleccionar el archivo model.json junto con sus archivos de pesos (.bin).');
-      }
-
-      if (classFile) {
-        try {
-          activeClasses = resolvePlantClasses(JSON.parse(await classFile.text()));
-        } catch {}
-      }
-
-      disposeModels();
-      updateModelUI('loading', backend);
-
-      const manifest = JSON.parse(await modelJson.text());
-      const ordered = [modelJson, ...binFiles];
-
-      if (manifest.format === 'graph-model') {
-        graphModel = await tf.loadGraphModel(tf.io.browserFiles(ordered));
-        updateModelUI('ready', backend, 'GraphModel', null);
-      } else {
-        layersModel = await tf.loadLayersModel(tf.io.browserFiles(ordered));
-        const gLayer = setupGradCam(layersModel);
-        warmUp();
-        updateModelUI('ready', backend, 'LayersModel', gLayer);
-      }
+      await runLoad(async () => {
+        const zipFile = files.find((f) => f.name.toLowerCase().endsWith('.zip'));
+        if (zipFile) {
+          if (typeof JSZip === 'undefined') throw new Error('No se cargó JSZip. Descomprime el ZIP y selecciona los archivos JSON y BIN.');
+          const zip = await JSZip.loadAsync(zipFile);
+          const manifests = Object.values(zip.files).filter((f) => !f.dir && /(^|\/)manifest\.json$/.test(f.name));
+          if (manifests.length !== 1) throw new Error('El ZIP debe contener un único manifest.json.');
+          const mf = manifests[0], prefix = mf.name.slice(0, -'manifest.json'.length);
+          const man = JSON.parse(await mf.async('string'));
+          await installModel(man, async (name) => {
+            const f = zip.file(prefix + name);
+            if (!f) throw new Error('Falta ' + name + ' en el ZIP.');
+            return f.async('arraybuffer');
+          });
+        } else {
+          const mf = files.find((f) => f.name === 'manifest.json');
+          if (!mf) throw new Error('Selecciona manifest.json y todos los pesos_XX.bin, o modelo_web.zip.');
+          const man = JSON.parse(await mf.text());
+          await installModel(man, async (name) => {
+            const f = files.find((f) => f.name === name);
+            if (!f) throw new Error('Falta seleccionar ' + name);
+            return f.arrayBuffer();
+          });
+        }
+        return true;
+      });
     }
 
-    function preprocessImage(imgEl, mode) {
+    function preprocessImage(imgEl) {
       return tf.tidy(() => {
         const raw = tf.browser.fromPixels(imgEl).toFloat();
-        const resized = tf.image.resizeBilinear(raw, [INPUT_SIZE, INPUT_SIZE], true);
-        let processed;
-        if (mode === 'caffe') {
-          const bgr = tf.reverse(resized, -1);
-          const meanBGR = tf.tensor1d([103.939, 116.779, 123.68]);
-          processed = tf.sub(bgr, meanBGR);
-        } else if (mode === 'tf') {
-          processed = tf.sub(tf.div(resized, 127.5), 1.0);
-        } else {
-          processed = tf.div(resized, 255.0);
-        }
-        return processed.expandDims(0);
+        const resized = tf.image.resizeBilinear(raw, [INPUT_SIZE, INPUT_SIZE], false, true);
+        return tf.sub(tf.reverse(resized, -1), tf.tensor1d([103.939, 116.779, 123.68])).expandDims(0);
       });
     }
 
@@ -1083,57 +1369,24 @@
       };
     }
 
-    async function computeGradCam(inputTensor, targetClassIdx, imgEl) {
-      if (!gradCamSubModel || !gradCamLayerName) return null;
-
-      const [convOut] = gradCamSubModel.predict(inputTensor);
-      let gradsTensor = null;
-
-      try {
-        const gradFn = tf.grad((convAct) => {
-          const layers = layersModel.layers;
-          const startIdx = layers.findIndex((l) => l.name === gradCamLayerName);
-          let x = convAct;
-          for (let i = startIdx + 1; i < layers.length; i++) {
-            if (layers[i].getClassName() === 'InputLayer') continue;
-            x = layers[i].apply(x);
-          }
-          return tf.gather(tf.squeeze(x), targetClassIdx);
-        });
-
-        gradsTensor = gradFn(convOut);
-        const camData = tf.tidy(() => {
-          const weights = tf.mean(gradsTensor, [0, 1, 2]);
-          const weighted = tf.sum(tf.mul(convOut.squeeze([0]), weights), -1);
-          const reluMap = tf.relu(weighted);
-          const normMap = tf.divNoNan(reluMap, tf.max(reluMap));
-          const w = imgEl.naturalWidth || imgEl.width || INPUT_SIZE;
-          const h = imgEl.naturalHeight || imgEl.height || INPUT_SIZE;
-          const up = tf.image.resizeBilinear(normMap.expandDims(-1), [h, w], true);
-          return { values: up.squeeze([-1]).dataSync(), width: w, height: h };
-        });
-
-        const rendered = renderGradCamCanvases(imgEl, camData.values, camData.width, camData.height);
-        return { ...rendered, targetLayerName: gradCamLayerName };
-      } catch {
-        const camData = tf.tidy(() => {
-          const energy = tf.mean(tf.relu(convOut.squeeze([0])), -1);
-          const normMap = tf.divNoNan(energy, tf.max(energy));
-          const w = imgEl.naturalWidth || imgEl.width || INPUT_SIZE;
-          const h = imgEl.naturalHeight || imgEl.height || INPUT_SIZE;
-          const up = tf.image.resizeBilinear(normMap.expandDims(-1), [h, w], true);
-          return { values: up.squeeze([-1]).dataSync(), width: w, height: h };
-        });
-        const rendered = renderGradCamCanvases(imgEl, camData.values, camData.width, camData.height);
-        return { ...rendered, targetLayerName: `${gradCamLayerName} (Activación Espacial)` };
-      } finally {
-        convOut.dispose();
-        if (gradsTensor) gradsTensor.dispose();
-      }
+    function computeGradCam(features, targetClassIdx, imgEl) {
+      const camData = tf.tidy(() => {
+        const grad = tf.grad((a) => tf.gather(classify(a).squeeze(), targetClassIdx))(features);
+        const w = tf.mean(grad, [0, 1, 2]);
+        const cam = tf.relu(tf.sum(tf.mul(features.squeeze([0]), w), -1));
+        const norm = tf.div(cam, tf.add(tf.max(cam), 1e-8));
+        const up = tf.image.resizeBilinear(norm.expandDims(-1), [224, 224], false, true);
+        return { values: up.squeeze([-1]).dataSync(), width: 224, height: 224 };
+      });
+      const rendered = renderGradCamCanvases(imgEl, camData.values, camData.width, camData.height);
+      return { ...rendered, targetLayerName: GRAD_LAYER };
     }
 
     async function analyzeImage() {
-      if (!currentImageDataUrl || !modelReady) return;
+      if (!currentImageDataUrl || !modelReady || analyzing || modelLoading) return;
+      analyzing = true;
+      $('btn-upload-model').disabled = true;
+      const imageSnapshot = currentImageDataUrl;
       const errBox = $('runtime-error');
       errBox.classList.add('hidden');
       const btn = $('btn-analyze');
@@ -1145,21 +1398,17 @@
           const img = new Image();
           img.onload = () => resolve(img);
           img.onerror = () => reject(new Error('No se pudo decodificar la imagen.'));
-          img.src = currentImageDataUrl;
+          img.src = imageSnapshot;
         });
 
         const mode = $('preprocess-select').value;
         const t0 = performance.now();
         const inputTensor = preprocessImage(imgEl, mode);
 
+        let features;
         try {
-          const probs = tf.tidy(() => {
-            const rawOut = layersModel ? layersModel.predict(inputTensor) : graphModel.predict(inputTensor);
-            const squeezed = rawOut.squeeze();
-            const sum = squeezed.sum().dataSync()[0];
-            const probTensor = Math.abs(sum - 1.0) < 0.05 ? squeezed : tf.softmax(squeezed);
-            return probTensor.dataSync();
-          });
+          features = extractFeatures(inputTensor);
+          const probs = tf.tidy(() => classify(features).squeeze().dataSync());
 
           const ranked = Array.from(probs)
             .map((probability, idx) => ({
@@ -1173,13 +1422,18 @@
             .sort((a, b) => b.probability - a.probability);
 
           const topPrediction = ranked[0];
-          const gradCam = await computeGradCam(inputTensor, topPrediction.classInfo.index, imgEl);
+          let gradCam = null;
+          try {
+            gradCam = computeGradCam(features, topPrediction.classInfo.index, imgEl);
+          } catch (err) {
+            console.warn('Grad-CAM no disponible:', err);
+          }
           const inferenceTimeMs = Math.round(performance.now() - t0);
 
           currentDiagnosis = {
             id: `diag-${Date.now()}`,
             timestamp: new Date().toISOString(),
-            imageDataUrl: currentImageDataUrl,
+            imageDataUrl: imageSnapshot,
             topPrediction,
             topPredictions: ranked.slice(0, 4),
             gradCam,
@@ -1190,13 +1444,16 @@
           renderDiagnosis(currentDiagnosis);
           await saveHistory(currentDiagnosis);
         } finally {
+          if (features) features.dispose();
           inputTensor.dispose();
         }
       } catch (err) {
         errBox.textContent = err.message || 'Error durante la inferencia.';
         errBox.classList.remove('hidden');
       } finally {
-        btn.disabled = false;
+        analyzing = false;
+        $('btn-upload-model').disabled = modelLoading;
+        btn.disabled = !modelReady || !currentImageDataUrl;
         btn.textContent = 'Analizar Patología con ResNet50';
       }
     }
@@ -1212,7 +1469,7 @@
 
       const badge = $('severity-badge');
       badge.className = `severity-badge severity-${info.severity}`;
-      badge.textContent = info.isHealthy ? 'Planta Sana' : `Severidad ${info.severity.charAt(0).toUpperCase() + info.severity.slice(1)}`;
+      badge.textContent = info.isHealthy ? 'Planta Sana' : `Riesgo orientativo: ${info.severity}`;
 
       $('diag-crop').textContent = info.crop;
       $('diag-name').textContent = info.commonName;
@@ -1223,7 +1480,6 @@
       prog.className = `progress-fill ${info.isHealthy ? 'fill-healthy' : 'fill-disease'}`;
       prog.style.width = `${Math.min(100, Number(pct))}%`;
 
-      // Grad-CAM
       const controls = $('gradcam-controls');
       const metrics = $('gradcam-metrics');
       const note = $('gradcam-note');
@@ -1242,11 +1498,10 @@
         controls.classList.add('hidden');
         metrics.innerHTML = '';
         $('gradcam-image').src = diag.imageDataUrl;
-        note.textContent = 'GraphModel no expone capas intermedias para Grad-CAM; exporta desde Keras (.h5) para habilitar gradientes.';
+        note.textContent = 'No fue posible calcular Grad-CAM para esta imagen. No se muestra un mapa simulado.';
         note.classList.remove('hidden');
       }
 
-      // Top 4
       $('top-list').innerHTML = diag.topPredictions.map((item) => {
         const p = (item.probability * 100).toFixed(1);
         return `
@@ -1261,7 +1516,6 @@
         `;
       }).join('');
 
-      // Guía agronómica
       $('agronomic-desc').textContent = info.description;
       $('symptoms-list').innerHTML = info.symptoms.map((s) => `<li>${s}</li>`).join('');
       $('recommendations-list').innerHTML = info.recommendations.map((r) => `<li>${r}</li>`).join('');
@@ -1343,37 +1597,162 @@
       renderHistory();
     };
 
-    // Cámara y archivos
+    // Carga por URL y Portapapeles
+    function fileToDataUrl(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error('No se pudo leer el archivo de imagen.'));
+        reader.readAsDataURL(file);
+      });
+    }
+
+    async function loadImageFromUrl(rawUrl) {
+      const url = (rawUrl || '').trim();
+      if (!url) {
+        showCaptureAlert('Pega una URL válida antes de cargar.');
+        return;
+      }
+      showCaptureAlert('');
+
+      if (url.startsWith('data:image/')) {
+        setSelectedImage(url);
+        return;
+      }
+
+      let parsed;
+      try {
+        parsed = new URL(url);
+        if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error();
+      } catch {
+        showCaptureAlert('La URL debe comenzar con http:// o https://');
+        return;
+      }
+
+      const btn = $('btn-load-url');
+      btn.disabled = true;
+      btn.textContent = 'Cargando...';
+
+      try {
+        // 1. Intento vía fetch CORS -> conversión directa a DataURL local (evita taint en canvas/TF.js)
+        try {
+          const res = await fetch(parsed.href, { mode: 'cors' });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const blob = await res.blob();
+          if (blob.type && !blob.type.startsWith('image/')) {
+            throw new Error('El enlace apunta a una página web, no directamente a un archivo de imagen.');
+          }
+          const dataUrl = await fileToDataUrl(blob);
+          setSelectedImage(dataUrl);
+          $('image-url-input').value = '';
+          return;
+        } catch (fetchErr) {
+          if (fetchErr.message && fetchErr.message.includes('página web')) throw fetchErr;
+        }
+
+        // 2. Respaldo vía <img> con crossOrigin="anonymous" -> canvas local
+        const dataUrl = await new Promise((resolve, reject) => {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = () => {
+            try {
+              const c = document.createElement('canvas');
+              c.width = img.naturalWidth || img.width;
+              c.height = img.naturalHeight || img.height;
+              c.getContext('2d').drawImage(img, 0, 0);
+              resolve(c.toDataURL('image/jpeg', 0.92));
+            } catch {
+              reject(new Error('CORS_BLOCKED'));
+            }
+          };
+          img.onerror = () => reject(new Error('CORS_BLOCKED'));
+          img.src = parsed.href;
+        });
+
+        setSelectedImage(dataUrl);
+        $('image-url-input').value = '';
+      } catch (err) {
+        if (err.message === 'CORS_BLOCKED') {
+          showCaptureAlert('Ese sitio web bloquea la descarga directa por seguridad (CORS). Solución rápida: haz clic derecho en la imagen → "Copiar imagen" y pégala aquí con Ctrl+V.');
+        } else {
+          showCaptureAlert(err.message || 'No se pudo cargar la imagen desde esa URL.');
+        }
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Cargar URL';
+      }
+    }
+
+    // Cámara Móvil y WebRTC
     function stopCamera() {
       if (cameraStream) {
         cameraStream.getTracks().forEach((t) => t.stop());
         cameraStream = null;
       }
+      const video = $('camera-video');
+      if (video) video.srcObject = null;
       $('camera-viewport').classList.add('hidden');
     }
 
     async function startCamera(mode = facingMode) {
-      $('camera-error').classList.add('hidden');
+      showCaptureAlert('');
       stopCamera();
+
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        showCaptureAlert('La cámara en vivo requiere conexión segura (HTTPS). Usa el botón "Foto Móvil" para abrir la cámara de tu teléfono directamente.');
+        return;
+      }
+
+      const constraintsList = [
+        { video: { facingMode: { ideal: mode }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false },
+        { video: { facingMode: mode }, audio: false },
+        { video: true, audio: false }
+      ];
+
+      let stream = null;
+      for (const constraints of constraintsList) {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia(constraints);
+          if (stream) break;
+        } catch {
+          // Probar siguiente configuración compatible
+        }
+      }
+
+      if (!stream) {
+        showCaptureAlert('No se pudo iniciar la cámara en vivo (permiso denegado o no disponible). Prueba con el botón "Foto Móvil".');
+        return;
+      }
+
+      cameraStream = stream;
+      const video = $('camera-video');
+      video.setAttribute('playsinline', '');
+      video.setAttribute('webkit-playsinline', '');
+      video.muted = true;
+      video.classList.toggle('mirrored', mode === 'user');
+      $('camera-mode-label').textContent = mode === 'user' ? 'Cámara Frontal' : 'Cámara Trasera';
+
+      $('dropzone').classList.add('hidden');
+      $('preview-container').classList.add('hidden');
+      $('camera-viewport').classList.remove('hidden');
+
       try {
-        cameraStream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: mode }, width: { ideal: 1280 }, height: { ideal: 720 } },
-          audio: false
-        });
-        $('dropzone').classList.add('hidden');
-        $('preview-container').classList.add('hidden');
-        $('camera-viewport').classList.remove('hidden');
-        const video = $('camera-video');
         video.srcObject = cameraStream;
+        await new Promise((resolve) => {
+          if (video.readyState >= 1) resolve();
+          else video.onloadedmetadata = () => resolve();
+        });
         await video.play();
       } catch {
-        $('camera-error').textContent = 'No se pudo acceder a la cámara. Verifica permisos o selecciona un archivo.';
-        $('camera-error').classList.remove('hidden');
+        stopCamera();
+        $('dropzone').classList.remove('hidden');
+        showCaptureAlert('Tu navegador bloqueó la vista previa de video. Usa el botón "Foto Móvil".');
       }
     }
 
     function setSelectedImage(dataUrl) {
       stopCamera();
+      showCaptureAlert('');
       currentImageDataUrl = dataUrl;
       $('preview-image').src = dataUrl;
       $('dropzone').classList.add('hidden');
@@ -1384,6 +1763,7 @@
     function clearSelectedImage() {
       currentImageDataUrl = null;
       currentDiagnosis = null;
+      showCaptureAlert('');
       $('preview-container').classList.add('hidden');
       $('dropzone').classList.remove('hidden');
       $('result-card').classList.add('hidden');
@@ -1406,28 +1786,78 @@
 
     $('btn-select-file').addEventListener('click', () => $('image-file-input').click());
     $('btn-change-img').addEventListener('click', () => $('image-file-input').click());
-    $('image-file-input').addEventListener('change', (e) => {
+    $('btn-native-cam').addEventListener('click', () => $('native-camera-input').click());
+
+    async function handleFileInput(e) {
       const file = e.target.files?.[0];
       if (!file || !file.type.startsWith('image/')) return;
-      const reader = new FileReader();
-      reader.onload = () => setSelectedImage(reader.result);
-      reader.readAsDataURL(file);
+      try {
+        const dataUrl = await fileToDataUrl(file);
+        setSelectedImage(dataUrl);
+      } catch (err) {
+        showCaptureAlert(err.message);
+      }
       e.target.value = '';
+    }
+
+    $('image-file-input').addEventListener('change', handleFileInput);
+    $('native-camera-input').addEventListener('change', handleFileInput);
+
+    // Eventos URL y Portapapeles
+    $('btn-load-url').addEventListener('click', () => loadImageFromUrl($('image-url-input').value));
+    $('image-url-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        loadImageFromUrl($('image-url-input').value);
+      }
     });
 
+    document.addEventListener('paste', async (e) => {
+      const items = e.clipboardData?.items;
+      if (items) {
+        for (const item of items) {
+          if (item.type.startsWith('image/')) {
+            e.preventDefault();
+            const file = item.getAsFile();
+            if (file) {
+              const dataUrl = await fileToDataUrl(file);
+              setSelectedImage(dataUrl);
+            }
+            return;
+          }
+        }
+      }
+      if (document.activeElement !== $('image-url-input')) {
+        const text = (e.clipboardData?.getData('text/plain') || '').trim();
+        if (/^(https?:\/\/|data:image\/)/i.test(text)) {
+          e.preventDefault();
+          $('image-url-input').value = text;
+          loadImageFromUrl(text);
+        }
+      }
+    });
+
+    // Drag & Drop
     const dz = $('dropzone');
     dz.addEventListener('dragover', (e) => { e.preventDefault(); dz.classList.add('dragover'); });
     dz.addEventListener('dragleave', () => dz.classList.remove('dragover'));
-    dz.addEventListener('drop', (e) => {
+    dz.addEventListener('drop', async (e) => {
       e.preventDefault();
       dz.classList.remove('dragover');
       const file = e.dataTransfer.files?.[0];
-      if (!file || !file.type.startsWith('image/')) return;
-      const reader = new FileReader();
-      reader.onload = () => setSelectedImage(reader.result);
-      reader.readAsDataURL(file);
+      if (file && file.type.startsWith('image/')) {
+        const dataUrl = await fileToDataUrl(file);
+        setSelectedImage(dataUrl);
+        return;
+      }
+      const droppedUrl = (e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain') || '').trim();
+      if (droppedUrl) {
+        $('image-url-input').value = droppedUrl;
+        loadImageFromUrl(droppedUrl);
+      }
     });
 
+    // Eventos Cámara WebRTC
     $('btn-open-cam').addEventListener('click', () => startCamera());
     $('btn-switch-cam').addEventListener('click', () => {
       facingMode = facingMode === 'environment' ? 'user' : 'environment';
@@ -1439,10 +1869,16 @@
     });
     $('btn-capture-frame').addEventListener('click', () => {
       const v = $('camera-video');
+      if (!v.videoWidth || !v.videoHeight) return;
       const c = document.createElement('canvas');
-      c.width = v.videoWidth || 640;
-      c.height = v.videoHeight || 480;
-      c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+      c.width = v.videoWidth;
+      c.height = v.videoHeight;
+      const ctx = c.getContext('2d');
+      if (facingMode === 'user') {
+        ctx.translate(c.width, 0);
+        ctx.scale(-1, 1);
+      }
+      ctx.drawImage(v, 0, 0, c.width, c.height);
       setSelectedImage(c.toDataURL('image/jpeg', 0.92));
     });
 
@@ -1483,7 +1919,7 @@
 
     // Inicialización
     renderHistory();
-    loadModelFromUrl('./model/model.json');
+    loadModelFromUrl();
   </script>
 </body>
 </html>
